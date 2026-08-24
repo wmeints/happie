@@ -3,10 +3,11 @@
 ``login()`` installs the ``appie://`` protocol handler, opens the
 authorization page, and waits for the token file to hold a fresh token.
 ``complete()`` accepts the authorization code (argument or terminal prompt),
-exchanges it for tokens, and stores them. Code parsing and the token exchange
-live in a private submodule; the token store and the handler installation are
-separate private modules, so each seam is unit-testable without a browser or
-network.
+exchanges it for tokens, and stores them. ``get_access_token()`` returns a
+usable access token, refreshing the stored pair on expiry. Code parsing and
+the token exchange live in a private submodule; the token store and the
+handler installation are separate private modules, so each seam is
+unit-testable without a browser or network.
 """
 
 import time
@@ -29,12 +30,14 @@ from happie.auth._store import (
     load_token,
     save_token,
 )
+from happie.auth._token import get_access_token
 
 __all__ = [
     "AuthenticationError",
     "Token",
     "complete",
     "ensure_handler",
+    "get_access_token",
     "login",
     "save_token",
 ]

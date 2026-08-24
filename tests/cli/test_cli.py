@@ -152,15 +152,15 @@ def test_auth_logout_logs_stand_in(capsys) -> None:
     ), f"unexpected stderr log lines: {messages!r}"
 
 
-def test_serve_logs_stand_in(capsys) -> None:
-    """`happie serve` logs that it would start the MCP server."""
-    configure_logging()
+def test_serve_starts_mcp_server(monkeypatch) -> None:
+    """`happie serve` starts the MCP server."""
+    from happie import server
+
+    calls = []
+    monkeypatch.setattr(server, "serve", lambda: calls.append(1))
     result = runner.invoke(app, ["serve"])
     assert result.exit_code == 0
-    messages = _logged_messages(capsys.readouterr().err)
-    assert any(
-        "start" in message and "MCP server" in message for message in messages
-    ), f"unexpected stderr log lines: {messages!r}"
+    assert calls == [1]
 
 
 def test_root_help_lists_auth_and_serve() -> None:

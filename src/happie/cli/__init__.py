@@ -7,8 +7,8 @@ commands run.
 ``auth login`` performs the browser OAuth flow (installs the ``appie://``
 protocol handler, opens the authorization page, and waits for the token
 file to be updated); ``auth complete`` exchanges the authorization code and
-stores the token; ``auth logout`` and ``serve`` are still logging stand-ins
-that arrive in later changes.
+stores the token; ``serve`` runs the MCP server on stdio. ``auth logout``
+is still a logging stand-in that arrives in a later change.
 """
 
 import logging
@@ -16,7 +16,7 @@ import sys
 
 import typer
 
-from happie import auth
+from happie import auth, server
 from happie.auth import AuthenticationError
 
 __all__ = ["app", "auth_app", "configure_logging"]
@@ -90,8 +90,8 @@ def complete(raw: str | None = typer.Argument(None)) -> None:
 
 @app.command()
 def serve() -> None:
-    """Run the MCP server."""
-    logger.info("Would start the MCP server (not yet implemented).")
+    """Run the MCP server on stdio."""
+    server.serve()
 
 
 app.add_typer(auth_app, name="auth")

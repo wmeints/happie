@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: conventional-commits
+        name: conventional-commits
+        entry: conventional-pre-commit --strict
+        language: python
+        additional_dependencies: ["conventional-pre-commit==4.4.0"]
+        stages: [commit-msg]

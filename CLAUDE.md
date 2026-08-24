@@ -5,6 +5,16 @@
 - Prefer deep modules with narrow interfaces.
 - Include numpy-style documentation strings for public interface members and modules.
 
+## Tooling
+
+- Use `uv` for dependency management and `ruff` for linting/formatting.
+- Run `pre-commit install --hook-type pre-commit --hook-type commit-msg` after cloning.
+- The `commit-msg` hook enforces Conventional Commits format (see https://www.conventionalcommits.org/).
+
+### Commit messages
+
+- Write all commit messages in Conventional Commits format: `type(scope?): description`.
+
 ## Coding workflow
 
 - Use a red-green-refactor approach to coding

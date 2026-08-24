@@ -53,13 +53,13 @@ log a message describing that it is removing the stored access token.
 - **THEN** the CLI logs a message stating that it is removing the stored access token
 
 ### Requirement: MCP server command
-The CLI SHALL provide a `happie serve` command that runs the MCP server. Until
-the server is implemented, running the command SHALL log a message describing
-that it is starting the MCP server.
+The CLI SHALL provide a `happie serve` command that starts the MCP server on
+stdio so that an MCP client can communicate with it.
 
 #### Scenario: Running `happie serve`
 - **WHEN** the user runs `happie serve`
-- **THEN** the CLI logs a message stating that it is starting the MCP server
+- **THEN** the MCP server runs and reads tool calls from stdin until the
+  client disconnects
 
 ### Requirement: Readable terminal logging
 The CLI SHALL configure application logging so that log messages are written

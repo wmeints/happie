@@ -1,0 +1,26 @@
+[project]
+name = "happie"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Willem Meints", email = "1550763+wmeints@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=3.4.7",
+    "typer>=0.27.1",
+]
+
+[project.scripts]
+happie = "happie:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.4",
+]

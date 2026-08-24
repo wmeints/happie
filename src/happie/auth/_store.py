@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-__all__ = ["DEFAULT_TOKEN_PATH", "Token", "save_token"]
+__all__ = ["DEFAULT_TOKEN_PATH", "Token", "load_token", "save_token"]
 
 #: Fixed location of the token file; no ``XDG_CONFIG_HOME`` override in this slice.
 DEFAULT_TOKEN_PATH = Path.home() / ".config" / "happie" / "token"
@@ -57,3 +57,41 @@ def save_token(token: Token, path: Path = DEFAULT_TOKEN_PATH) -> None:
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     os.chmod(path, _FILE_MODE)
+
+
+def load_token(path: Path = DEFAULT_TOKEN_PATH) -> Token | None:
+    """Parse the stored-token JSON at ``path`` into a :class:`Token`.
+
+    Args:
+        path: Where to read the JSON file; defaults to
+            ``~/.config/happie/token``.
+
+    Returns:
+        The parsed token, or ``None`` when the file is missing, unreadable,
+        or does not carry the three stored-token fields with a parseable,
+        timezone-aware ``expires_at``.
+    """
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    access_token = payload.get("access_token")
+    refresh_token = payload.get("refresh_token")
+    expires_at = payload.get("expires_at")
+    if not isinstance(access_token, str) or not isinstance(refresh_token, str):
+        return None
+    if not isinstance(expires_at, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=parsed,
+    )

@@ -4,9 +4,11 @@ Exposes the typer application (``app``) and its command tree, plus the
 ``configure_logging`` helper used to prepare terminal logging before the
 commands run.
 
-``auth login`` performs the browser OAuth flow to obtain and store a token;
-``auth logout`` and ``serve`` are still logging stand-ins that arrive in
-later changes.
+``auth login`` performs the browser OAuth flow (installs the ``appie://``
+protocol handler, opens the authorization page, and waits for the token
+file to be updated); ``auth complete`` exchanges the authorization code and
+stores the token; ``auth logout`` and ``serve`` are still logging stand-ins
+that arrive in later changes.
 """
 
 import logging
@@ -69,6 +71,21 @@ def login() -> None:
 def logout() -> None:
     """Remove the stored access token."""
     logger.info("Would remove the stored access token (not yet implemented).")
+
+
+@auth_app.command()
+def complete(raw: str | None = typer.Argument(None)) -> None:
+    """Complete the browser login by exchanging the authorization code."""
+    try:
+        auth.complete(raw)
+    except AuthenticationError as exc:
+        logger.error(
+            "Authentication failed: %s Run `happie auth login` again to "
+            "obtain a token.",
+            exc,
+        )
+        raise typer.Exit(code=1) from exc
+    logger.info("Stored Albert Heijn access token.")
 
 
 @app.command()

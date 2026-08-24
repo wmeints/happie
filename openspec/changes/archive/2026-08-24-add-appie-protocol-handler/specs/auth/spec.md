@@ -1,11 +1,6 @@
-# auth Specification
+# auth (delta)
 
-## Purpose
-Browser-based authentication against the Albert Heijn mobile-auth API:
-captures the authorization code from the user's browser login, exchanges it
-for an access token, and keeps the tokens in a user-only store.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Browser-based code acquisition
 The authentication flow SHALL install the `appie://` protocol handler (as
@@ -49,6 +44,8 @@ error reporting SHALL reveal the code value.
 - **WHEN** the user is prompted and provides a URL or query string that contains no code value
 - **THEN** the entrypoint reports that no code was found and prompts again
 
+## ADDED Requirements
+
 ### Requirement: Code completion entrypoint
 The authentication capability SHALL expose a code-completion entrypoint that
 takes an authorization code (from an argument or the terminal prompt, as
@@ -87,43 +84,3 @@ indicating the login timed out.
 #### Scenario: No token within the timeout
 - **WHEN** five minutes elapse without a valid token file change
 - **THEN** the login flow reports a timeout error and exits non-zero
-
-### Requirement: Token exchange
-The flow SHALL exchange the authorization code for tokens by sending
-`POST https://api.ah.nl/mobile-auth/v1/auth/token` with a JSON body whose
-`clientId` is `appie` and which contains the code, and with the
-`User-Agent: Appie/8.22.3` header. The request SHALL NOT include an
-`Authorization` header. A successful response provides an access token, a
-refresh token, and an expiry in seconds.
-
-#### Scenario: Successful exchange
-- **WHEN** the token endpoint returns an access token, a refresh token, and an expiry
-- **THEN** the flow stores that token as specified by the token storage requirement
-
-#### Scenario: Code rejected by the token endpoint
-- **WHEN** the token endpoint returns an error status for the code
-- **THEN** the flow reports that the code could not be used, no token is stored, and the user must log in again
-
-### Requirement: Token storage
-A successful exchange SHALL store the tokens in `~/.config/happie/token` as
-JSON containing the access token, the refresh token, and the expiry time
-derived from the returned `expires_in` at the moment of the exchange. The
-file SHALL be readable and writable by the user only; the
-`~/.config/happie` directory SHALL be created if it does not exist. A
-successful exchange SHALL replace any previously stored token.
-
-#### Scenario: Tokens are stored user-only
-- **WHEN** the token exchange succeeds
-- **THEN** `~/.config/happie/token` contains the access token, the refresh token, and the expiry time, and the file is accessible to the user only
-
-#### Scenario: New login replaces the stored token
-- **WHEN** a token file already exists and a new exchange succeeds
-- **THEN** the file contains only the newly exchanged tokens
-
-### Requirement: Secrets are not written to logs
-Authorization codes, access tokens, and refresh tokens SHALL NOT appear in
-log messages or any other terminal output.
-
-#### Scenario: Successful login output
-- **WHEN** the login flow runs to completion
-- **THEN** no log message contains the authorization code or any token value

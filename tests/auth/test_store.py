@@ -5,7 +5,7 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
-from happie.auth._store import Token, save_token
+from happie.auth._store import Token, load_token, save_token
 
 
 def _token(expires_at: datetime) -> Token:
@@ -51,3 +51,45 @@ def test_save_token_replaces_existing(tmp_path: Path) -> None:
     data = json.loads(path.read_text())
     assert data["access_token"] == "new-access"
     assert data["refresh_token"] == "new-refresh"
+
+
+def test_load_token_round_trips_saved_token(tmp_path: Path) -> None:
+    """load_token parses a file written by save_token into the same Token."""
+    token = _token(datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC))
+    path = tmp_path / "token"
+    save_token(token, path=path)
+    assert load_token(path) == token
+
+
+def test_load_token_missing_file_returns_none(tmp_path: Path) -> None:
+    assert load_token(tmp_path / "nope") is None
+
+
+def test_load_token_malformed_json_returns_none(tmp_path: Path) -> None:
+    path = tmp_path / "token"
+    path.write_text("{not json", encoding="utf-8")
+    assert load_token(path) is None
+
+
+def test_load_token_missing_fields_returns_none(tmp_path: Path) -> None:
+    path = tmp_path / "token"
+    path.write_text(json.dumps({"access_token": "a"}), encoding="utf-8")
+    assert load_token(path) is None
+
+
+def test_load_token_unparseable_or_naive_expiry_returns_none(
+    tmp_path: Path,
+) -> None:
+    for expires_at in ("not-a-date", "2026-08-24T12:00:00"):
+        path = tmp_path / "token"
+        path.write_text(
+            json.dumps(
+                {
+                    "access_token": "a",
+                    "refresh_token": "r",
+                    "expires_at": expires_at,
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert load_token(path) is None, expires_at

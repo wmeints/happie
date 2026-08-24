@@ -4,8 +4,8 @@ Exposes the typer application (``app``) and its command tree, plus the
 ``configure_logging`` helper used to prepare terminal logging before the
 commands run.
 
-Commands are currently logging stand-ins: each one reports, at ``INFO``,
-what it would do. Real authentication and MCP server behavior arrive in
+``auth login`` performs the browser OAuth flow to obtain and store a token;
+``auth logout`` and ``serve`` are still logging stand-ins that arrive in
 later changes.
 """
 
@@ -13,6 +13,9 @@ import logging
 import sys
 
 import typer
+
+from happie import auth
+from happie.auth import AuthenticationError
 
 __all__ = ["app", "auth_app", "configure_logging"]
 
@@ -51,10 +54,15 @@ def configure_logging() -> None:
 @auth_app.command()
 def login() -> None:
     """Authenticate via the browser to obtain an access token."""
-    logger.info(
-        "Would authenticate the user via the browser to obtain an access token "
-        "(not yet implemented)."
-    )
+    try:
+        auth.login()
+    except AuthenticationError as exc:
+        logger.error(
+            "Authentication failed: %s Run `happie auth login` again to "
+            "obtain a token.",
+            exc,
+        )
+        raise typer.Exit(code=1) from exc
 
 
 @auth_app.command()

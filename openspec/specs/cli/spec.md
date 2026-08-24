@@ -9,14 +9,14 @@ start the MCP server, and it controls how log messages reach the terminal.
 ## Requirements
 
 ### Requirement: Authentication login command
-The CLI SHALL provide a `happie auth login` command that authenticates the
-user through the browser to obtain an access token. Until authentication is
-implemented, running the command SHALL log a message describing that it is
-starting browser-based authentication to obtain an access token.
+The CLI SHALL provide a `happie auth login` command that starts the
+browser-based authentication flow to obtain and store an access token, as
+specified by the `auth` capability.
 
 #### Scenario: Running `happie auth login`
 - **WHEN** the user runs `happie auth login`
-- **THEN** the CLI logs a message stating that it is authenticating the user via the browser to obtain an access token
+- **THEN** the CLI opens the Albert Heijn authorization page in the user's
+  default browser and prompts the user for the authorization code
 
 ### Requirement: Authentication logout command
 The CLI SHALL provide a `happie auth logout` command that removes the stored

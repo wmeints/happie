@@ -17,15 +17,31 @@ def _logged_messages(err: str) -> list[str]:
     return [match.group(1) for match in LOG_LINE.finditer(err)]
 
 
-def test_auth_login_logs_stand_in(capsys) -> None:
-    """`happie auth login` logs that it would authenticate via the browser."""
-    configure_logging()
+def test_auth_login_runs_flow(monkeypatch) -> None:
+    """`happie auth login` invokes the browser OAuth flow."""
+    from happie import auth
+
+    calls = []
+    monkeypatch.setattr(auth, "login", lambda: calls.append(1))
     result = runner.invoke(app, ["auth", "login"])
     assert result.exit_code == 0
-    messages = _logged_messages(capsys.readouterr().err)
-    assert any(
-        "browser" in message and "access token" in message for message in messages
-    ), f"unexpected stderr log lines: {messages!r}"
+    assert calls == [1]
+
+
+def test_auth_login_exits_nonzero_on_failure(monkeypatch, capsys) -> None:
+    """`happie auth login` exits non-zero and logs guidance when it fails."""
+    from happie.auth import AuthenticationError
+
+    def failing() -> None:
+        raise AuthenticationError("the code could not be used")
+
+    monkeypatch.setattr("happie.auth.login", failing)
+    configure_logging()
+    result = runner.invoke(app, ["auth", "login"])
+    assert result.exit_code == 1
+    err = capsys.readouterr().err
+    assert "again" in err
+    assert "the code could not be used" in err
 
 
 def test_auth_logout_logs_stand_in(capsys) -> None:

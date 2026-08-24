@@ -3,17 +3,28 @@
 This is my implementation of an MCP server for the Albert Heijn API. Use with
 caution, I can't help you if they ban you from the API endpoints.
 
+## Goal of this MCP Server
+
+You can use this MCP server to give your [Hermes Agent](https://hermes-agent.nousresearch.com/)
+or Claude to capability to find information about groceries and previous 
+purchases at Albert Heijn. 
+
 ## System requirements
 
 - [uv](https://astral.sh/uv)
+- Linux with Gnome/KDE/COSMIC or any other XDG-compatible desktop environment.
+
+I am planning on supporting other environments like Windows and Mac. If you 
+need support right now, feel free to submit a pull request.
 
 ## Getting started
 
 - `git clone https://github.com/wmeints/happie`
 - `cd happie`
 - `uv install`
-- `uv run happie`
+- `uv run happie auth login`
+- `uv run happie serve`
 
 ## Documentation
 
-TODO: documentation
+- [Architecture documentation](docs/architecture)

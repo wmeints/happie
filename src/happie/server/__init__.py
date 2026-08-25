@@ -51,8 +51,9 @@ def purchase_frequency(days: int = 90, limit: int | None = None) -> list[Purchas
     Returns:
         One statistic per purchased product, sorted by total quantity
         descending. Each carries its product key, name, total quantity,
-        purchase-day count, total spend, window start date, and a dense
-        per-day purchase quantity covering every day of the window.
+        total spend, and a sparse per-day histogram with one entry per
+        purchased day, each entry carrying that day's date and that day's
+        total quantity, ordered by date.
 
     Raises:
         AuthenticationError: If no usable stored token exists.

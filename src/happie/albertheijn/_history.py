@@ -41,8 +41,9 @@ def aggregate(
     Records whose day falls outside the window
     (``[window_start, window_start + days - 1]``) are ignored. Records with
     the same key merge into one statistic: quantities and spend sum, the
-    longest known name is kept, and every window day gets exactly one dense
-    per-day entry (zero where nothing was bought).
+    longest known name is kept, and each purchased day becomes a single
+    histogram entry carrying that day and its summed quantity; days with no
+    purchase contribute no entry.
 
     Args:
         records: The unified purchase records, from both sources.
@@ -60,11 +61,13 @@ def aggregate(
             continue
         entry = totals.setdefault(
             record.key,
-            {"name": "", "quantity": 0.0, "spend": 0.0, "per_day": [0.0] * days},
+            {"name": "", "quantity": 0.0, "spend": 0.0, "by_day": {}},
         )
         entry["quantity"] += record.quantity
         entry["spend"] += record.amount
-        entry["per_day"][offset] += record.quantity
+        entry["by_day"][record.day] = (
+            entry["by_day"].get(record.day, 0.0) + record.quantity
+        )
         if len(record.name) > len(entry["name"]):
             entry["name"] = record.name
 
@@ -73,10 +76,8 @@ def aggregate(
             key=key,
             name=entry["name"],
             total_quantity=entry["quantity"],
-            purchase_days=sum(count > 0 for count in entry["per_day"]),
             total_spend=entry["spend"],
-            window_start=window_start,
-            daily_counts=tuple(entry["per_day"]),
+            histogram=tuple(sorted(entry["by_day"].items())),
         )
         for key, entry in totals.items()
     ]

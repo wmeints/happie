@@ -68,11 +68,12 @@ time window in days (default 90, ending today), returns one purchase
 statistic per unique product purchased during the window, merging two
 sources: in-store receipt items (kassabon) and delivered webshop order
 items. Each statistic SHALL expose a product key, a product name, the total
-quantity purchased in the window, the number of distinct days on which the
-product was purchased, the total amount spent on the product in the window,
-the calendar date on which the window starts, and a dense per-day purchase
-count with exactly one entry per day of the window (zero on days with no
-purchase).
+quantity purchased in the window, the total amount spent on the product in
+the window, and a sparse per-day histogram: one entry per calendar day on
+which the product was actually purchased, each entry carrying that day's
+date and the total quantity purchased on that day, ordered by date
+ascending. The histogram SHALL be empty when the product was not purchased
+on any day of the window.
 
 Products whose receipt line items are identified by a store point-of-sale
 product id SHALL be converted to the Albert Heijn webshop product id; when
@@ -96,9 +97,9 @@ The result SHALL be sorted by total quantity in descending order.
 
 #### Scenario: Dense per-day counts cover the whole window
 - **WHEN** a product was purchased on only two days of a 90-day window
-- **THEN** its per-day count has an entry for every day of the window, with
-  the purchased quantities on the two days and zero on all other days, and
-  the window start date is reported so the entries can be aligned to dates
+- **THEN** its histogram has exactly two entries, one per purchased day,
+  each entry carrying that day's date and that day's total quantity, ordered
+  by date; no entries are returned for the days with no purchase
 
 #### Scenario: Purchases before the window are excluded
 - **WHEN** a receipt or a delivered order falls before the window start date

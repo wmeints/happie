@@ -5,6 +5,7 @@ MCP tools speak — and translates raw API product objects into it.
 """
 
 from dataclasses import dataclass
+from datetime import date
 
 __all__ = ["Product", "product_from_api"]
 
@@ -80,3 +81,31 @@ def product_from_api(data: dict) -> Product:
         available_online=bool(data.get("availableOnline", False)),
         main_category=str(data.get("mainCategory") or ""),
     )
+
+
+@dataclass(frozen=True)
+class PurchaseStat:
+    """Purchase statistics for one product over a time window.
+
+    Attributes:
+        key: The canonical product key: ``wi<webshop_id>`` for products
+            resolved to a webshop id, ``pos<pos_id>`` for receipt items
+            whose store point-of-sale id has no webshop conversion.
+        name: The product name.
+        total_quantity: The total quantity purchased in the window.
+        purchase_days: The number of distinct days on which the product
+            was purchased.
+        total_spend: The total amount spent on the product in the window.
+        window_start: The calendar date on which the window starts.
+        daily_counts: Dense per-day purchase quantities, with exactly one
+            entry per day of the window, aligned to ``window_start``
+            (zero on days with no purchase).
+    """
+
+    key: str
+    name: str
+    total_quantity: float
+    purchase_days: int
+    total_spend: float
+    window_start: date
+    daily_counts: tuple[float, ...]

@@ -47,26 +47,28 @@ def test_aggregate_keeps_unconverted_pos_keys_separate() -> None:
     assert [stat.key for stat in stats] == ["pos624318", "wi624318"]
 
 
-def test_aggregate_dense_array_covers_whole_window() -> None:
-    """The per-day array has one entry per window day, aligned to the start."""
+def test_aggregate_histogram_has_one_entry_per_purchased_day() -> None:
+    """Only purchased days appear; each entry carries its date and quantity."""
     window_start = date(2026, 5, 16)
     stats = aggregate(
         [
-            record(date(2026, 5, 16), "wi1", "Melk", 3.0, 3.0),
+            # The later day is fed first to prove the order is by date.
             record(date(2026, 6, 15), "wi1", "Melk", 2.0, 2.0),
+            record(date(2026, 5, 16), "wi1", "Melk", 3.0, 3.0),
         ],
         window_start,
         days=31,
     )
 
     stat = stats[0]
-    assert stat.window_start == window_start
-    assert len(stat.daily_counts) == 31
-    # 2026-05-16 is the first day of the window; 2026-06-15 the last.
-    assert stat.daily_counts[0] == 3.0
-    assert stat.daily_counts[30] == 2.0
-    assert sum(stat.daily_counts) == 5.0
-    assert stat.purchase_days == 2
+    # 2026-05-16 is the first day of the window and 2026-06-15 the last, but
+    # the 29 days between them carry no entry: exactly one entry per
+    # purchased day, ordered by date.
+    assert stat.histogram == (
+        (date(2026, 5, 16), 3.0),
+        (date(2026, 6, 15), 2.0),
+    )
+    assert len(stat.histogram) == 2
 
 
 def test_aggregate_excludes_records_outside_the_window() -> None:
@@ -84,6 +86,22 @@ def test_aggregate_excludes_records_outside_the_window() -> None:
 
     assert [stat.key for stat in stats] == ["wi2"]
     assert stats[0].total_quantity == 1.0
+    assert stats[0].histogram == ((date(2026, 8, 13), 1.0),)
+
+
+def test_aggregate_no_in_window_purchases_returns_empty_list() -> None:
+    """Records outside the window yield no statistics at all."""
+    window_start = date(2026, 5, 16)
+    stats = aggregate(
+        [
+            record(date(2026, 5, 15), "wi1", "Melk", 3.0, 3.0),
+            record(date(2026, 8, 14), "wi1", "Melk", 2.0, 2.0),
+        ],
+        window_start,
+        days=90,
+    )
+
+    assert stats == []
 
 
 def test_aggregate_sums_spend_per_key() -> None:
@@ -104,8 +122,8 @@ def test_aggregate_sums_spend_per_key() -> None:
     assert by_key["wi2"].total_spend == 4.5
 
 
-def test_aggregate_same_day_records_count_as_one_purchase_day() -> None:
-    """Two records on the same day count as a single purchase day."""
+def test_aggregate_same_day_records_sum_into_single_entry() -> None:
+    """Two records on the same day become one histogram entry with the sum."""
     window_start = date(2026, 5, 16)
     stats = aggregate(
         [
@@ -117,7 +135,7 @@ def test_aggregate_same_day_records_count_as_one_purchase_day() -> None:
     )
 
     stat = stats[0]
-    assert stat.purchase_days == 1
+    assert stat.histogram == ((date(2026, 6, 1), 3.0),)
     assert stat.total_quantity == 3.0
 
 

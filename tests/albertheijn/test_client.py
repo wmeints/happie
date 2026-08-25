@@ -341,7 +341,6 @@ def _order_details(order_id: int, delivery_date: str, items: list[tuple]) -> dic
 def test_purchase_history_merges_receipt_and_order_records(monkeypatch) -> None:
     """Both sources flow into merged, quantity-sorted PurchaseStat results."""
     today = datetime.now(UTC).date()
-    window_start = today - timedelta(days=89)
     yesterday = today - timedelta(days=1)
     two_days_ago = today - timedelta(days=2)
 
@@ -386,15 +385,13 @@ def test_purchase_history_merges_receipt_and_order_records(monkeypatch) -> None:
     assert melted.key == "wi555"
     assert melted.name == "AH Kaiserbrood"
     assert melted.total_quantity == 3.0
-    assert melted.purchase_days == 2
     assert melted.total_spend == 3.57
-    assert melted.window_start == window_start
-    assert len(melted.daily_counts) == 90
-    yesterday_offset = (yesterday - window_start).days
-    two_ago_offset = (two_days_ago - window_start).days
-    assert melted.daily_counts[yesterday_offset] == 2.0
-    assert melted.daily_counts[two_ago_offset] == 1.0
-    assert sum(melted.daily_counts) == 3.0
+    # Sparse histogram: one entry per purchased day, date-stamped, ordered
+    # by date; unpurchased days carry no entry.
+    assert melted.histogram == (
+        (two_days_ago, 1.0),
+        (yesterday, 2.0),
+    )
     assert stats[0].total_quantity == 4.0
     assert stats[2].key == "pos999" and stats[2].name == "NAPKINS"
     # 2 receipt pages (in-window page plus the empty terminator) + 1 detail

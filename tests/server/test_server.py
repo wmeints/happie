@@ -118,10 +118,8 @@ def _stat(key: str = "wi111", total_quantity: float = 3.0, **overrides) -> Purch
         "key": key,
         "name": "Melk",
         "total_quantity": total_quantity,
-        "purchase_days": 2,
         "total_spend": 3.57,
-        "window_start": date(2026, 5, 16),
-        "daily_counts": (1.0, 2.0, 0.0),
+        "histogram": ((date(2026, 6, 1), 1.0), (date(2026, 6, 2), 2.0)),
     }
     data.update(overrides)
     return PurchaseStat(**data)

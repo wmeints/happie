@@ -1,15 +1,23 @@
-"""HTTP client for the Albert Heijn product search endpoint.
+"""HTTP client for the Albert Heijn product search and purchase-history APIs.
 
 Attaches the required application headers and the user's bearer token to
-every request, and translates the search response into ``Product`` models.
+every request. The product search endpoint is wrapped directly here; the
+purchase-history endpoints live in the ``_receipts``, ``_orders``, and
+``_history`` submodules, orchestrated by :meth:`AlbertHeijnClient.get_purchase_history`.
 """
+
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from happie.albertheijn._models import Product, product_from_api
+from happie.albertheijn._errors import AlbertHeijnError
+from happie.albertheijn._history import PurchaseRecord, aggregate
+from happie.albertheijn._models import Product, PurchaseStat, product_from_api
+from happie.albertheijn._orders import fetch_order_history
+from happie.albertheijn._receipts import enrich_product_names, fetch_receipt_history
 from happie.auth import get_access_token
 
-__all__ = ["SEARCH_URL", "AlbertHeijnClient", "AlbertHeijnError"]
+__all__ = ["SEARCH_URL", "AlbertHeijnClient"]
 
 SEARCH_URL = "https://api.ah.nl/mobile-services/product/search/v2"
 
@@ -24,13 +32,6 @@ _APP_HEADERS = {
 }
 
 
-class AlbertHeijnError(Exception):
-    """Raised when the Albert Heijn product search endpoint fails.
-
-    The message is safe to log: it never contains a token value.
-    """
-
-
 class AlbertHeijnClient:
     """Client for the Albert Heijn product search endpoint.
 
@@ -38,6 +39,67 @@ class AlbertHeijnClient:
     request time, so constructing it never touches the network or the token
     store.
     """
+
+    def get_purchase_history(self, days: int = 90) -> list[PurchaseStat]:
+        """Summarise the user's purchases over the last ``days`` days.
+
+        Merges in-store receipt items and delivered webshop order items
+        into one statistic per product, with a dense per-day purchase
+        quantity covering the whole window. Products bought in-store and
+        online under the same webshop id merge into one statistic; receipt
+        items without a webshop conversion stay separate under their
+        point-of-sale id.
+
+        Args:
+            days: The length of the window in days, ending today.
+
+        Returns:
+            One :class:`PurchaseStat` per purchased product, sorted by
+            total quantity descending.
+
+        Raises:
+            AuthenticationError: If no usable stored token exists. No
+                request is made in that case.
+            AlbertHeijnError: If any purchase-history request fails. No
+                partial result is returned.
+        """
+        token = get_access_token()
+        window_start = datetime.now(UTC).date() - timedelta(days=days - 1)
+        http = httpx.Client(
+            headers={**_APP_HEADERS, "Authorization": f"Bearer {token}"}
+        )
+        try:
+            receipt_items, conversion = fetch_receipt_history(http, window_start)
+            order_items = fetch_order_history(http, window_start, days)
+            converted_ids = sorted(set(conversion.values()))
+            titles = enrich_product_names(http, converted_ids) if converted_ids else {}
+            records = [
+                PurchaseRecord(
+                    day=item.date,
+                    key=(
+                        f"wi{conversion[item.pos_id]}"
+                        if item.pos_id in conversion
+                        else f"pos{item.pos_id}"
+                    ),
+                    name=titles.get(conversion.get(item.pos_id), item.name),
+                    quantity=item.quantity,
+                    amount=item.amount,
+                )
+                for item in receipt_items
+            ]
+            records.extend(
+                PurchaseRecord(
+                    day=item.date,
+                    key=f"wi{item.webshop_id}",
+                    name=item.name,
+                    quantity=item.quantity,
+                    amount=item.amount,
+                )
+                for item in order_items
+            )
+            return aggregate(records, window_start, days)
+        finally:
+            http.close()
 
     def search_products(self, query: str, limit: int = 10) -> list[Product]:
         """Search the Albert Heijn assortment for ``query``.

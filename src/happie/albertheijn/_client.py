@@ -10,6 +10,13 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from happie.albertheijn._bonus import (
+    BonusGroup,
+    fetch_bonus_products,
+    fetch_bonus_promotions,
+    fetch_bonus_section,
+    fetch_national_categories,
+)
 from happie.albertheijn._errors import AlbertHeijnError
 from happie.albertheijn._history import PurchaseRecord, aggregate
 from happie.albertheijn._models import Product, PurchaseStat, product_from_api
@@ -147,3 +154,84 @@ class AlbertHeijnClient:
             raise AlbertHeijnError(
                 "Product search returned an unexpected response."
             ) from exc
+
+    def get_bonus_offers(self) -> list[Product]:
+        """Return the products on bonus during the current bonus period.
+
+        Walks every national bonus category's section and expands each
+        multi-product bonus group into its concrete products. A product
+        listed in more than one category, or both in a category section
+        and inside a group, is returned exactly once, first occurrence
+        first, keeping the API's category order. Folder products the API
+        does not flag as bonus are dropped.
+
+        Returns:
+            One :class:`Product` per on-bonus product, each flagged as
+            being on bonus with the deal text as its bonus mechanism. An
+            empty list when the current bonus period has no products in
+            any national category.
+
+        Raises:
+            AuthenticationError: If no usable stored token exists. No
+                request is made in that case.
+            AlbertHeijnError: If the bonus metadata, any category-section,
+                any bonus-group resolution, or any bonus-product request
+                fails. No partial result is returned.
+        """
+        token = get_access_token()
+        http = httpx.Client(
+            headers={**_APP_HEADERS, "Authorization": f"Bearer {token}"}
+        )
+        try:
+            period_start, categories = fetch_national_categories(http)
+            if not categories:
+                return []
+            sections = [
+                fetch_bonus_section(http, period_start, category)
+                for category in categories
+            ]
+            promotions: dict[str, list[int]] = {}
+            if any(
+                isinstance(entry, BonusGroup)
+                for section in sections
+                for entry in section
+            ):
+                promotions = fetch_bonus_promotions(http)
+            product_ids: list[int] = []
+            seen_ids: set[int] = set()
+            for section in sections:
+                for entry in section:
+                    if isinstance(entry, BonusGroup):
+                        for product_id in promotions.get(entry.segment_id, []):
+                            if product_id not in seen_ids:
+                                seen_ids.add(product_id)
+                                product_ids.append(product_id)
+            raw_by_id = fetch_bonus_products(http, product_ids) if product_ids else {}
+
+            products: list[Product] = []
+            emitted: set[int] = set()
+            for section in sections:
+                for entry in section:
+                    if isinstance(entry, BonusGroup):
+                        raws = [
+                            raw_by_id[product_id]
+                            for product_id in promotions.get(entry.segment_id, [])
+                            if product_id in raw_by_id
+                        ]
+                    else:
+                        raws = [entry]
+                    for raw in raws:
+                        try:
+                            product = product_from_api(raw)
+                        except (KeyError, TypeError, ValueError) as exc:
+                            raise AlbertHeijnError(
+                                "Bonus offers returned an unexpected response."
+                            ) from exc
+                        if not product.is_bonus:
+                            continue
+                        if product.webshop_id not in emitted:
+                            emitted.add(product.webshop_id)
+                            products.append(product)
+            return products
+        finally:
+            http.close()

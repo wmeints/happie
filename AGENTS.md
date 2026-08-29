@@ -7,7 +7,8 @@
 
 ## Tooling
 
-- Use `uv` for dependency management and `ruff` for linting/formatting.
+Use `uv` for dependency management and `ruff` for linting/formatting.
+Use `ty` for typechecking; it is pinned in the dev dependency group and runs as a pre-commit hook before every commit.
 - Run `pre-commit install --hook-type pre-commit --hook-type commit-msg` after cloning.
 - The `commit-msg` hook enforces Conventional Commits format (see https://www.conventionalcommits.org/).
 

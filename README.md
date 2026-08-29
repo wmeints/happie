@@ -6,7 +6,7 @@ caution, I can't help you if they ban you from the API endpoints.
 ## Goal of this MCP Server
 
 You can use this MCP server to give your [Hermes Agent](https://hermes-agent.nousresearch.com/)
-or Claude to capability to find information about groceries and previous 
+or Claude the capability to find information about groceries and previous 
 purchases at Albert Heijn. 
 
 ## System requirements
@@ -14,8 +14,8 @@ purchases at Albert Heijn.
 - [uv](https://astral.sh/uv)
 - Linux with Gnome/KDE/COSMIC or any other XDG-compatible desktop environment.
 
-I am planning on supporting other environments like Windows and Mac. If you 
-need support right now, feel free to submit a pull request.
+I am not planning on supporting other environments like Windows and Mac. If you 
+need support, feel free to submit a pull request.
 
 ## Getting started
 

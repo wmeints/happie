@@ -453,3 +453,334 @@ def test_purchase_history_empty_window_returns_empty_list(monkeypatch) -> None:
     assert AlbertHeijnClient().get_purchase_history() == []
     # One receipt page and the summaries; no details or enrichment requests.
     assert len(fake.requests) == 2
+
+
+# --- Bonus offers ----------------------------------------------------------
+
+
+def _group_entry(segment_id: str, description: str, discount: str) -> dict:
+    return {
+        "id": segment_id,
+        "segmentDescription": description,
+        "discountDescription": discount,
+        "category": "Bijgerecht",
+        "products": [],
+    }
+
+
+class BonusFake:
+    """Canned bonus-page responses with request recording."""
+
+    def __init__(
+        self,
+        categories=("Bijerecht", "Drank"),
+        periods=None,
+        sections=None,
+        promotions=None,
+        products_by_id=None,
+        fail_section=None,
+        fail_promotions=False,
+        fail_products=False,
+    ):
+        today = datetime.now(UTC).date()
+        self.periods = (
+            periods
+            if periods is not None
+            else [
+                {
+                    "bonusStartDate": (today - timedelta(days=3)).isoformat(),
+                    "bonusEndDate": (today + timedelta(days=4)).isoformat(),
+                }
+            ]
+        )
+        self.categories = categories
+        self.sections = (
+            sections
+            if sections is not None
+            else {category: [] for category in categories}
+        )
+        self.promotions = promotions if promotions is not None else {}
+        self.products_by_id = products_by_id if products_by_id is not None else {}
+        self.fail_section = fail_section
+        self.fail_promotions = fail_promotions
+        self.fail_products = fail_products
+        self.requests: list[httpx.Request] = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path = request.url.path
+        if path.endswith("/bonuspage/v3/metadata"):
+            return httpx.Response(
+                200,
+                json={
+                    "periods": [
+                        {
+                            **period,
+                            "tabs": [
+                                {
+                                    "urlMetadataList": [
+                                        {
+                                            "bonusType": "NATIONAL",
+                                            "description": category,
+                                            "count": 0,
+                                            "url": "",
+                                        }
+                                        for category in self.categories
+                                    ]
+                                }
+                            ],
+                        }
+                        for period in self.periods
+                    ],
+                },
+            )
+        if path.endswith("/bonuspage/v2/section"):
+            category = request.url.params["category"]
+            if category == self.fail_section:
+                return httpx.Response(500)
+            return httpx.Response(
+                200, json={"bonusGroupOrProducts": self.sections[category]}
+            )
+        if path == "/graphql":
+            if self.fail_promotions:
+                return httpx.Response(200, json={"errors": [{"message": "boom"}]})
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "bonusPromotions": [
+                            {
+                                "id": segment_id,
+                                "products": [
+                                    {"id": product_id} for product_id in product_ids
+                                ],
+                            }
+                            for segment_id, product_ids in self.promotions.items()
+                        ]
+                    }
+                },
+            )
+        if path.endswith("/product/search/v2/products"):
+            if self.fail_products:
+                return httpx.Response(503)
+            ids = [int(value) for value in request.url.params.get_list("ids")]
+            return httpx.Response(
+                200,
+                json=[
+                    self.products_by_id[product_id]
+                    for product_id in ids
+                    if product_id in self.products_by_id
+                ],
+            )
+        raise AssertionError(f"unexpected url: {path}")
+
+
+def test_bonus_offers_expands_groups_and_deduplicates(monkeypatch) -> None:
+    """Metadata -> sections -> groups flows into one Product per on-bonus
+    product; a product in two places comes back once, in category order."""
+    melk = _bonus_product(webshopId=101, title="Melk", bonusMechanism="1+1 gratis")
+    kaas = _bonus_product(webshopId=102, title="Kaas", bonusMechanism="30% korting")
+    brood = _bonus_product(webshopId=103, title="Brood", bonusMechanism="2 VOOR 5.00")
+    yoghurt = _bonus_product(
+        webshopId=104, title="Yoghurt", bonusMechanism="1+1 gratis"
+    )
+    fake = BonusFake(
+        sections={
+            "Bijerecht": [
+                {"product": melk},
+                {"bonusGroup": _group_entry("s1", "Alle Melk", "1+1 gratis")},
+            ],
+            "Drank": [
+                {"bonusGroup": _group_entry("s2", "Alle Kaas", "30% korting")},
+                {"product": melk},  # also listed in the other category
+            ],
+        },
+        promotions={"s1": [102, 103], "s2": [104, 101]},
+        products_by_id={102: kaas, 103: brood, 104: yoghurt, 101: melk},
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    products = AlbertHeijnClient().get_bonus_offers()
+
+    assert [product.webshop_id for product in products] == [101, 102, 103, 104]
+    assert all(product.is_bonus for product in products)
+    assert [product.bonus_mechanism for product in products] == [
+        "1+1 gratis",
+        "30% korting",
+        "2 VOOR 5.00",
+        "1+1 gratis",
+    ]
+    assert products[0].title == "Melk" and products[3].title == "Yoghurt"
+    # 1 metadata + 2 sections + 1 group expansion + 1 products-by-ids batch.
+    assert len(fake.requests) == 5
+
+
+def test_bonus_offers_missing_segment_contributes_nothing(monkeypatch) -> None:
+    """A group whose segment is absent from bonusPromotions contributes
+    nothing; no products-by-ids request is made when nothing resolves."""
+    fake = BonusFake(
+        categories=("Bijerecht",),
+        sections={
+            "Bijerecht": [
+                {"bonusGroup": _group_entry("missing", "Alle Kaas", "1+1 gratis")}
+            ]
+        },
+        promotions={},
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    assert AlbertHeijnClient().get_bonus_offers() == []
+    assert len(fake.requests) == 3  # metadata + section + expansion
+
+
+def test_bonus_offers_without_groups_makes_no_expansion_requests(
+    monkeypatch,
+) -> None:
+    """Sections without groups skip the GraphQL and products-by-ids steps."""
+    melk = _bonus_product(webshopId=101, title="Melk", bonusMechanism="1+1 gratis")
+    brood = _bonus_product(webshopId=102, title="Brood", bonusMechanism="1+1 gratis")
+    fake = BonusFake(
+        sections={"Bijerecht": [{"product": melk}], "Drank": [{"product": brood}]}
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    products = AlbertHeijnClient().get_bonus_offers()
+
+    assert [product.webshop_id for product in products] == [101, 102]
+    assert len(fake.requests) == 3  # 1 metadata + 2 sections
+
+
+def test_bonus_offers_without_usable_token_makes_no_request(monkeypatch) -> None:
+    """No token means no request: AuthenticationError propagates directly."""
+    fake = BonusFake()
+    _patch_transport(monkeypatch, fake.handler)
+
+    def missing_token() -> str:
+        raise AuthenticationError("No stored token. Run `happie auth login` first.")
+
+    import happie.albertheijn._client as client_module
+
+    monkeypatch.setattr(client_module, "get_access_token", missing_token)
+
+    with pytest.raises(AuthenticationError):
+        AlbertHeijnClient().get_bonus_offers()
+    assert fake.requests == []
+
+
+def test_bonus_offers_failed_section_fails_the_call(monkeypatch) -> None:
+    """One failed section fetch fails the whole call, naming the category
+    and the status, without a token in the output."""
+    fake = BonusFake(fail_section="Drank")
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    with pytest.raises(AlbertHeijnError) as excinfo:
+        AlbertHeijnClient().get_bonus_offers()
+
+    assert "Drank" in str(excinfo.value)
+    assert "500" in str(excinfo.value)
+    assert "access-secret" not in str(excinfo.value)
+
+
+def test_bonus_offers_failed_group_expansion_fails_the_call(monkeypatch) -> None:
+    """A failing bonusPromotions response fails the whole call without a
+    token in the output."""
+    fake = BonusFake(
+        categories=("Bijerecht",),
+        sections={
+            "Bijerecht": [{"bonusGroup": _group_entry("s1", "Alle Melk", "1+1 gratis")}]
+        },
+        fail_promotions=True,
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    with pytest.raises(AlbertHeijnError) as excinfo:
+        AlbertHeijnClient().get_bonus_offers()
+
+    assert "Bonus promotions" in str(excinfo.value)
+    assert "access-secret" not in str(excinfo.value)
+
+
+def test_bonus_offers_failed_product_lookup_fails_the_call(monkeypatch) -> None:
+    """A failing products-by-ids response fails the whole call without a
+    token in the output."""
+    kaas = _bonus_product(webshopId=102, title="Kaas", bonusMechanism="1+1 gratis")
+    fake = BonusFake(
+        categories=("Bijerecht",),
+        sections={
+            "Bijerecht": [{"bonusGroup": _group_entry("s1", "Alle Melk", "1+1 gratis")}]
+        },
+        promotions={"s1": [102]},
+        products_by_id={102: kaas},
+        fail_products=True,
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    with pytest.raises(AlbertHeijnError) as excinfo:
+        AlbertHeijnClient().get_bonus_offers()
+
+    assert "503" in str(excinfo.value)
+    assert "access-secret" not in str(excinfo.value)
+
+
+def test_bonus_offers_empty_period_returns_empty_list(monkeypatch) -> None:
+    """No active period yields no categories and an empty list, not an
+    error; no section requests are made."""
+    fake = BonusFake(
+        periods=[{"bonusStartDate": "2026-01-01", "bonusEndDate": "2026-01-07"}]
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    assert AlbertHeijnClient().get_bonus_offers() == []
+    assert len(fake.requests) == 1  # metadata only
+
+
+def test_bonus_offers_empty_sections_return_empty_list(monkeypatch) -> None:
+    """An active period with empty sections returns an empty list, not an
+    error; no expansion or lookup requests are made."""
+    fake = BonusFake()
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    assert AlbertHeijnClient().get_bonus_offers() == []
+    # 1 metadata + 2 empty sections; no expansion or lookup requests.
+    assert len(fake.requests) == 3
+
+
+def test_bonus_offers_drops_products_the_api_does_not_flag(monkeypatch) -> None:
+    """Folder products the API does not flag as bonus contribute nothing."""
+    melk = _bonus_product(webshopId=101, title="Melk", bonusMechanism="1+1 gratis")
+    potroos = _bonus_product(
+        webshopId=102,
+        title="AH Potroos p17",
+        currentPrice=9.0,
+        priceBeforeBonus=9.0,
+        isBonus=False,
+        bonusMechanism="",
+        mainCategory="",
+    )
+    kaas = _bonus_product(webshopId=103, title="Kaas", bonusMechanism="1+1 gratis")
+    fake = BonusFake(
+        categories=("Bijerecht",),
+        sections={
+            "Bijerecht": [
+                {"product": melk},
+                {"product": potroos},
+                {"bonusGroup": _group_entry("s1", "Alle Kaas", "1+1 gratis")},
+            ]
+        },
+        promotions={"s1": [102, 103]},
+        products_by_id={103: kaas, 102: potroos},
+    )
+    _patch_transport(monkeypatch, fake.handler)
+    _patch_token(monkeypatch)
+
+    products = AlbertHeijnClient().get_bonus_offers()
+
+    assert [product.webshop_id for product in products] == [101, 103]

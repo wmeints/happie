@@ -65,6 +65,33 @@ def purchase_frequency(days: int = 90, limit: int | None = None) -> list[Purchas
     return stats
 
 
+@mcp.tool
+def bonus_offers(limit: int | None = None) -> list[Product]:
+    """Show the products on bonus during the current bonus period.
+
+    Covers every national bonus category, with each multi-product bonus
+    group expanded to its concrete products. A product listed in more than
+    one place appears exactly once, in the API's category order.
+
+    Args:
+        limit: The maximum number of products to return, in the API's
+            category order. None returns all products.
+
+    Returns:
+        One product per on-bonus product. Each carries its webshop
+        identifier, name, brand, prices, the deal text as bonus mechanism,
+        package size, online availability, and bonus category.
+
+    Raises:
+        AuthenticationError: If no usable stored token exists.
+        AlbertHeijnError: If the bonus endpoints fail.
+    """
+    products = AlbertHeijnClient().get_bonus_offers()
+    if limit is not None:
+        products = products[:limit]
+    return products
+
+
 def serve() -> None:
     """Run the MCP server on stdio until the client disconnects."""
     mcp.run()

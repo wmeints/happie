@@ -22,6 +22,8 @@ class StubClient:
         error: Exception | None = None,
         stats: list[PurchaseStat] | None = None,
         stats_error: Exception | None = None,
+        bonus_products: list[Product] | None = None,
+        bonus_error: Exception | None = None,
     ):
         self.products = products or []
         self.error = error
@@ -29,6 +31,9 @@ class StubClient:
         self.stats = stats or []
         self.stats_error = stats_error
         self.history_calls: list[int] = []
+        self.bonus_products = bonus_products or []
+        self.bonus_error = bonus_error
+        self.bonus_calls = 0
 
     def search_products(self, query: str, limit: int = 10) -> list[Product]:
         self.calls.append((query, limit))
@@ -41,6 +46,12 @@ class StubClient:
         if self.stats_error is not None:
             raise self.stats_error
         return self.stats
+
+    def get_bonus_offers(self) -> list[Product]:
+        self.bonus_calls += 1
+        if self.bonus_error is not None:
+            raise self.bonus_error
+        return self.bonus_products
 
 
 def _product() -> Product:
@@ -179,3 +190,91 @@ def test_purchase_frequency_propagates_client_errors(monkeypatch) -> None:
         asyncio.run(mcp.call_tool("purchase_frequency", {}))
 
     assert isinstance(excinfo.value.__cause__, AuthenticationError)
+
+
+# --- Bonus offers ----------------------------------------------------------
+
+
+def _bonus_product(webshop_id: int = 222, title: str = "Kaas") -> Product:
+    """A canned on-bonus product, with ``webshop_id``/``title`` set."""
+    return Product(
+        webshop_id=webshop_id,
+        title=title,
+        brand="Galbani",
+        price=2.49,
+        price_before_bonus=3.49,
+        is_bonus=True,
+        bonus_mechanism="1+1 gratis",
+        sales_unit_size="250 g",
+        unit_price_description="per 100 g",
+        available_online=True,
+        main_category="Kaas",
+    )
+
+
+def test_bonus_offers_returns_the_clients_products(monkeypatch) -> None:
+    """The tool returns the client's bonus products unchanged, in order."""
+    products = [_bonus_product(222, "Kaas"), _bonus_product(333, "Brood")]
+    stub = StubClient(bonus_products=products)
+    _patch_client(monkeypatch, stub)
+
+    result = asyncio.run(mcp.call_tool("bonus_offers", {}))
+
+    assert stub.bonus_calls == 1
+    assert result.is_error is False
+    assert result.structured_content["result"] == [asdict(p) for p in products]
+
+
+def test_bonus_offers_trims_to_the_limit(monkeypatch) -> None:
+    """A smaller limit trims the result, keeping the API's order."""
+    products = [
+        _bonus_product(222, "Kaas"),
+        _bonus_product(333, "Brood"),
+        _bonus_product(444, "Melk"),
+    ]
+    stub = StubClient(bonus_products=products)
+    _patch_client(monkeypatch, stub)
+
+    result = asyncio.run(mcp.call_tool("bonus_offers", {"limit": 2}))
+
+    assert result.is_error is False
+    assert result.structured_content["result"] == [asdict(p) for p in products[:2]]
+
+
+def test_bonus_offers_returns_empty_list_when_no_offers(monkeypatch) -> None:
+    """A bonus period without products yields an empty list, not an error."""
+    stub = StubClient()
+    _patch_client(monkeypatch, stub)
+
+    result = asyncio.run(mcp.call_tool("bonus_offers", {}))
+
+    assert result.is_error is False
+    assert result.structured_content["result"] == []
+
+
+def test_bonus_offers_propagates_client_errors(monkeypatch) -> None:
+    """A client error (e.g. missing token) surfaces as a tool error."""
+    stub = StubClient(bonus_error=AuthenticationError("No stored token."))
+    _patch_client(monkeypatch, stub)
+
+    with pytest.raises(ToolError) as excinfo:
+        asyncio.run(mcp.call_tool("bonus_offers", {}))
+
+    assert isinstance(excinfo.value.__cause__, AuthenticationError)
+
+
+def test_bonus_offers_failure_keeps_the_server_running(monkeypatch) -> None:
+    """A failed call reports an error; the next call still works."""
+    failing = StubClient(bonus_error=AuthenticationError("No stored token."))
+    _patch_client(monkeypatch, failing)
+
+    with pytest.raises(ToolError):
+        asyncio.run(mcp.call_tool("bonus_offers", {}))
+
+    working = StubClient(bonus_products=[_bonus_product()])
+    _patch_client(monkeypatch, working)
+
+    result = asyncio.run(mcp.call_tool("bonus_offers", {}))
+
+    assert result.is_error is False
+    assert result.structured_content["result"] == [asdict(_bonus_product())]

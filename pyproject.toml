@@ -1,7 +1,7 @@
 [project]
 name = "happie"
 version = "0.1.0"
-description = "Add your description here"
+description = "An MCP server for working with the Albert Heijn API from your agent"
 readme = "README.md"
 authors = [
     { name = "Willem Meints", email = "1550763+wmeints@users.noreply.github.com" }
@@ -27,3 +27,16 @@ dev = [
     "ruff>=0.16.4",
     "ty==0.0.75",
 ]
+
+[tool.ruff.lint]
+extend-select = ["C90", "D"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 5
+

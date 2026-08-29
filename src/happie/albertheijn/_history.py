@@ -17,7 +17,8 @@ __all__ = ["PurchaseRecord", "aggregate"]
 class PurchaseRecord:
     """One unified purchase record from either source.
 
-    Attributes:
+    Attributes
+    ----------
         day: The calendar day of the purchase.
         key: The canonical product key (``wi<webshop_id>`` or
             ``pos<pos_id>``).
@@ -50,7 +51,8 @@ def aggregate(
         window_start: The first calendar day of the window.
         days: The length of the window in days.
 
-    Returns:
+    Returns
+    -------
         One statistic per product, sorted by total quantity descending
         (ties broken by product key for a deterministic order).
     """

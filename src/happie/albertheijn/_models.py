@@ -14,7 +14,8 @@ __all__ = ["Product", "product_from_api"]
 class Product:
     """A single Albert Heijn product as returned by the search API.
 
-    Attributes:
+    Attributes
+    ----------
         webshop_id: The webshop identifier used to order the product.
         title: The product name.
         brand: The brand name.
@@ -54,10 +55,12 @@ def product_from_api(data: dict) -> Product:
     Args:
         data: One entry of the API's ``products`` array.
 
-    Returns:
+    Returns
+    -------
         The translated :class:`Product`.
 
-    Raises:
+    Raises
+    ------
         KeyError: If the ``webshopId`` field is missing.
         TypeError: If a field has an unexpected type.
     """
@@ -87,7 +90,8 @@ def product_from_api(data: dict) -> Product:
 class PurchaseStat:
     """Purchase statistics for one product over a time window.
 
-    Attributes:
+    Attributes
+    ----------
         key: The canonical product key: ``wi<webshop_id>`` for products
             resolved to a webshop id, ``pos<pos_id>`` for receipt items
             whose store point-of-sale id has no webshop conversion.

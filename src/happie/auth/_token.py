@@ -44,10 +44,12 @@ def get_access_token(
             transport in tests). A disposable client is created and closed
             when a refresh is needed and no client is given.
 
-    Returns:
+    Returns
+    -------
         The access token to use as the bearer credential.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If no token is stored, or the refresh request
             fails or returns an unexpected body. No token value ever appears
             in a raised message or in log output.

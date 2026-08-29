@@ -249,29 +249,40 @@ class PurchaseHistoryFake:
             return self._graphql(request)
         if path == "/mobile-services/order/v1/summaries":
             return httpx.Response(200, json=self.summaries)
+        details = self._order_details_response(path)
+        if details is not None:
+            return details
+        if path == "/mobile-services/product/search/v2/products":
+            return self._products(request)
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    def _order_details_response(self, path: str) -> httpx.Response | None:
+        """Canned grouped-details response, or ``None`` for other paths."""
         match = re.fullmatch(
             r"/mobile-services/order/v1/(\d+)/details-grouped-by-taxonomy", path
         )
-        if match:
-            order_id = int(match.group(1))
-            if self.fail_details_order == order_id:
-                return httpx.Response(500)
-            return httpx.Response(200, json=self.order_details.get(order_id, {}))
-        if path == "/mobile-services/product/search/v2/products":
-            ids = [
-                int(value)
-                for key, value in request.url.params.multi_items()
-                if key == "ids"
-            ]
-            return httpx.Response(
-                200,
-                json=[
-                    {"webshopId": product_id, "title": self.product_titles[product_id]}
-                    for product_id in ids
-                    if product_id in self.product_titles
-                ],
-            )
-        raise AssertionError(f"unexpected request: {request.url}")
+        if match is None:
+            return None
+        order_id = int(match.group(1))
+        if self.fail_details_order == order_id:
+            return httpx.Response(500)
+        return httpx.Response(200, json=self.order_details.get(order_id, {}))
+
+    def _products(self, request: httpx.Request) -> httpx.Response:
+        """Canned products-by-ids response, skipping unknown ids."""
+        ids = [
+            int(value)
+            for key, value in request.url.params.multi_items()
+            if key == "ids"
+        ]
+        return httpx.Response(
+            200,
+            json=[
+                {"webshopId": product_id, "title": self.product_titles[product_id]}
+                for product_id in ids
+                if product_id in self.product_titles
+            ],
+        )
 
     def _graphql(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
@@ -510,74 +521,91 @@ class BonusFake:
         self.requests.append(request)
         path = request.url.path
         if path.endswith("/bonuspage/v3/metadata"):
-            return httpx.Response(
-                200,
-                json={
-                    "periods": [
+            return self._metadata()
+        if path.endswith("/bonuspage/v2/section"):
+            return self._section(request)
+        if path == "/graphql":
+            return self._promotions()
+        if path.endswith("/product/search/v2/products"):
+            return self._products(request)
+        raise AssertionError(f"unexpected url: {path}")
+
+    def _metadata(self) -> httpx.Response:
+        """Metadata page: periods with one NATIONAL tab per category."""
+        return httpx.Response(
+            200,
+            json={
+                "periods": [
+                    {
+                        **period,
+                        "tabs": [
+                            {
+                                "urlMetadataList": [
+                                    {
+                                        "bonusType": "NATIONAL",
+                                        "description": category,
+                                        "count": 0,
+                                        "url": "",
+                                    }
+                                    for category in self.categories
+                                ]
+                            }
+                        ],
+                    }
+                    for period in self.periods
+                ],
+            },
+        )
+
+    def _section(self, request: httpx.Request) -> httpx.Response:
+        """Section page for the requested category, or 500 when flagged."""
+        category = request.url.params["category"]
+        if category == self.fail_section:
+            return httpx.Response(500)
+        return httpx.Response(
+            200, json={"bonusGroupOrProducts": self.sections[category]}
+        )
+
+    def _promotions(self) -> httpx.Response:
+        """bonusPromotions expansion, or an errors payload when flagged."""
+        if self.fail_promotions:
+            return httpx.Response(200, json={"errors": [{"message": "boom"}]})
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "bonusPromotions": [
                         {
-                            **period,
-                            "tabs": [
-                                {
-                                    "urlMetadataList": [
-                                        {
-                                            "bonusType": "NATIONAL",
-                                            "description": category,
-                                            "count": 0,
-                                            "url": "",
-                                        }
-                                        for category in self.categories
-                                    ]
-                                }
+                            "id": segment_id,
+                            "products": [
+                                {"id": product_id} for product_id in product_ids
                             ],
                         }
-                        for period in self.periods
-                    ],
-                },
-            )
-        if path.endswith("/bonuspage/v2/section"):
-            category = request.url.params["category"]
-            if category == self.fail_section:
-                return httpx.Response(500)
-            return httpx.Response(
-                200, json={"bonusGroupOrProducts": self.sections[category]}
-            )
-        if path == "/graphql":
-            if self.fail_promotions:
-                return httpx.Response(200, json={"errors": [{"message": "boom"}]})
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "bonusPromotions": [
-                            {
-                                "id": segment_id,
-                                "products": [
-                                    {"id": product_id} for product_id in product_ids
-                                ],
-                            }
-                            for segment_id, product_ids in self.promotions.items()
-                        ]
-                    }
-                },
-            )
-        if path.endswith("/product/search/v2/products"):
-            if self.fail_products:
-                return httpx.Response(503)
-            ids = [int(value) for value in request.url.params.get_list("ids")]
-            return httpx.Response(
-                200,
-                json=[
-                    self.products_by_id[product_id]
-                    for product_id in ids
-                    if product_id in self.products_by_id
-                ],
-            )
-        raise AssertionError(f"unexpected url: {path}")
+                        for segment_id, product_ids in self.promotions.items()
+                    ]
+                }
+            },
+        )
+
+    def _products(self, request: httpx.Request) -> httpx.Response:
+        """Products-by-ids lookup, or 503 when flagged."""
+        if self.fail_products:
+            return httpx.Response(503)
+        ids = [int(value) for value in request.url.params.get_list("ids")]
+        return httpx.Response(
+            200,
+            json=[
+                self.products_by_id[product_id]
+                for product_id in ids
+                if product_id in self.products_by_id
+            ],
+        )
 
 
 def test_bonus_offers_expands_groups_and_deduplicates(monkeypatch) -> None:
     """Metadata -> sections -> groups flows into one Product per on-bonus
-    product; a product in two places comes back once, in category order."""
+    product; a product in two places comes back once, in category order.
+    """
     melk = _bonus_product(webshopId=101, title="Melk", bonusMechanism="1+1 gratis")
     kaas = _bonus_product(webshopId=102, title="Kaas", bonusMechanism="30% korting")
     brood = _bonus_product(webshopId=103, title="Brood", bonusMechanism="2 VOOR 5.00")
@@ -618,7 +646,8 @@ def test_bonus_offers_expands_groups_and_deduplicates(monkeypatch) -> None:
 
 def test_bonus_offers_missing_segment_contributes_nothing(monkeypatch) -> None:
     """A group whose segment is absent from bonusPromotions contributes
-    nothing; no products-by-ids request is made when nothing resolves."""
+    nothing; no products-by-ids request is made when nothing resolves.
+    """
     fake = BonusFake(
         categories=("Bijerecht",),
         sections={
@@ -672,7 +701,8 @@ def test_bonus_offers_without_usable_token_makes_no_request(monkeypatch) -> None
 
 def test_bonus_offers_failed_section_fails_the_call(monkeypatch) -> None:
     """One failed section fetch fails the whole call, naming the category
-    and the status, without a token in the output."""
+    and the status, without a token in the output.
+    """
     fake = BonusFake(fail_section="Drank")
     _patch_transport(monkeypatch, fake.handler)
     _patch_token(monkeypatch)
@@ -687,7 +717,8 @@ def test_bonus_offers_failed_section_fails_the_call(monkeypatch) -> None:
 
 def test_bonus_offers_failed_group_expansion_fails_the_call(monkeypatch) -> None:
     """A failing bonusPromotions response fails the whole call without a
-    token in the output."""
+    token in the output.
+    """
     fake = BonusFake(
         categories=("Bijerecht",),
         sections={
@@ -707,7 +738,8 @@ def test_bonus_offers_failed_group_expansion_fails_the_call(monkeypatch) -> None
 
 def test_bonus_offers_failed_product_lookup_fails_the_call(monkeypatch) -> None:
     """A failing products-by-ids response fails the whole call without a
-    token in the output."""
+    token in the output.
+    """
     kaas = _bonus_product(webshopId=102, title="Kaas", bonusMechanism="1+1 gratis")
     fake = BonusFake(
         categories=("Bijerecht",),
@@ -730,7 +762,8 @@ def test_bonus_offers_failed_product_lookup_fails_the_call(monkeypatch) -> None:
 
 def test_bonus_offers_empty_period_returns_empty_list(monkeypatch) -> None:
     """No active period yields no categories and an empty list, not an
-    error; no section requests are made."""
+    error; no section requests are made.
+    """
     fake = BonusFake(
         periods=[{"bonusStartDate": "2026-01-01", "bonusEndDate": "2026-01-07"}]
     )
@@ -743,7 +776,8 @@ def test_bonus_offers_empty_period_returns_empty_list(monkeypatch) -> None:
 
 def test_bonus_offers_empty_sections_return_empty_list(monkeypatch) -> None:
     """An active period with empty sections returns an empty list, not an
-    error; no expansion or lookup requests are made."""
+    error; no expansion or lookup requests are made.
+    """
     fake = BonusFake()
     _patch_transport(monkeypatch, fake.handler)
     _patch_token(monkeypatch)

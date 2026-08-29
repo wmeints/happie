@@ -153,7 +153,7 @@ def test_complete_no_arg_prompts_then_stores_once(monkeypatch, caplog) -> None:
 
 
 def test_login_ends_wait_when_handler_stores_token(tmp_path: Path, monkeypatch) -> None:
-    """login ensures the handler, opens the browser, and exits on a fresh token."""
+    """Login ensures the handler, opens the browser, and exits on a fresh token."""
     token_path = tmp_path / "token"
     clock = _install_fake_clock(monkeypatch)
     ensured, opened = _patch_login_seams(monkeypatch, token_path)

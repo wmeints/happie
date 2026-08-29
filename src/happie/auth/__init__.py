@@ -65,7 +65,8 @@ def login() -> None:
     desktop environment when the browser redirects to ``appie://login-exit``).
     The flow never prompts for the code.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If the handler cannot be installed, the browser
             cannot be opened, or no fresh token is stored within five
             minutes.
@@ -89,10 +90,12 @@ def complete(raw: str | None = None) -> Token:
         raw: The deep-link URL, query string, or bare code; ``None`` to
             prompt on the terminal.
 
-    Returns:
+    Returns
+    -------
         The stored :class:`Token`.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If no code can be extracted from ``raw`` or the
             exchange fails. The message never contains the code or any token
             value.
@@ -161,7 +164,8 @@ def _wait_for_token(initial_state: tuple[int, int] | None) -> None:
         initial_state: The ``(st_ino, st_mtime_ns)`` snapshot taken before
             the browser was opened, or ``None`` when the file was absent.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If no valid change occurs within the timeout.
     """
     deadline = time.monotonic() + _WATCH_TIMEOUT.total_seconds()

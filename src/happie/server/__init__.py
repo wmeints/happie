@@ -23,13 +23,15 @@ def search_products(query: str, limit: int = 10) -> list[Product]:
         query: The search term.
         limit: The maximum number of products to return.
 
-    Returns:
+    Returns
+    -------
         The matching products, at most ``limit`` of them, in the API's
         relevance order. Each product carries its webshop identifier, name,
         brand, current and pre-bonus price, bonus information, package
         size, online availability, and main category.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If no usable stored token exists.
         AlbertHeijnError: If the search endpoint fails.
     """
@@ -48,14 +50,16 @@ def purchase_frequency(days: int = 90, limit: int | None = None) -> list[Purchas
         limit: The maximum number of statistics to return; the highest
             total quantities come first. None returns all statistics.
 
-    Returns:
+    Returns
+    -------
         One statistic per purchased product, sorted by total quantity
         descending. Each carries its product key, name, total quantity,
         total spend, and a sparse per-day histogram with one entry per
         purchased day, each entry carrying that day's date and that day's
         total quantity, ordered by date.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If no usable stored token exists.
         AlbertHeijnError: If the purchase-history endpoints fail.
     """
@@ -77,12 +81,14 @@ def bonus_offers(limit: int | None = None) -> list[Product]:
         limit: The maximum number of products to return, in the API's
             category order. None returns all products.
 
-    Returns:
+    Returns
+    -------
         One product per on-bonus product. Each carries its webshop
         identifier, name, brand, prices, the deal text as bonus mechanism,
         package size, online availability, and bonus category.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If no usable stored token exists.
         AlbertHeijnError: If the bonus endpoints fail.
     """

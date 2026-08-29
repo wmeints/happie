@@ -24,7 +24,8 @@ def test_auth_login_ensures_handler_and_waits_for_token(
     monkeypatch, tmp_path, capsys
 ) -> None:
     """`happie auth login` installs the handler, opens the browser, and exits
-    when the token file is updated — without prompting for the code."""
+    when the token file is updated — without prompting for the code.
+    """
     from happie import auth
     from happie.auth._store import Token, save_token
 

@@ -54,7 +54,8 @@ query FetchPosReceipts($offset: Int!, $limit: Int!) {
 class ReceiptItem:
     """One in-store receipt line item.
 
-    Attributes:
+    Attributes
+    ----------
         date: The calendar day of the receipt (the UTC date of its time).
         pos_id: The store point-of-sale product id.
         quantity: The quantity on the receipt.
@@ -79,62 +80,136 @@ def fetch_receipt_history(
             the user's bearer token.
         window_start: The first calendar day to include.
 
-    Returns:
+    Returns
+    -------
         A pair of:
 
         - the in-window receipt line items, oldest receipt first;
         - the POS-to-webshop id mapping, holding only successfully
           converted ids (null and non-positive values are unresolved).
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If any request returns a status other than 200,
             a GraphQL ``errors`` payload, or an unexpected body.
+    """
+    receipts = _window_receipts(http, window_start)
+    items = _receipt_items(http, receipts)
+    return items, _id_conversion(http, items)
+
+
+def _window_receipts(http: httpx.Client, window_start: date) -> list[tuple[str, date]]:
+    """Page the receipt list until a page reaches before the window.
+
+    Args:
+        http: The preconfigured client carrying the application headers and
+            the user's bearer token.
+        window_start: The first calendar day to include.
+
+    Returns
+    -------
+        The in-window ``(receipt id, day)`` pairs, newest receipt first.
+
+    Raises
+    ------
+        AlbertHeijnError: If any page request fails or carries an
+            unparsable receipt entry.
     """
     receipts: list[tuple[str, date]] = []
     offset = 0
     while True:
-        data = _graphql(
-            http,
-            _RECEIPTS_PAGE_QUERY,
-            "posReceiptsPage",
-            variables={"offset": offset, "limit": _PAGE_SIZE},
-        )
-        entries = (data.get("posReceiptsPage") or {}).get("posReceipts") or []
+        entries = _receipt_page(http, offset)
         if not entries:
             break
-        reached_before_window = False
-        for entry in entries:
-            day = _receipt_day(entry)
-            if day < window_start:
-                reached_before_window = True
-                break
-            receipts.append((str(entry["id"]), day))
+        batch, reached_before_window = _in_window_entries(entries, window_start)
+        receipts.extend(batch)
         if reached_before_window:
             break
         offset += _PAGE_SIZE
+    return receipts
 
+
+def _receipt_page(http: httpx.Client, offset: int) -> list[dict]:
+    """Fetch one page of the receipt list."""
+    data = _graphql(
+        http,
+        _RECEIPTS_PAGE_QUERY,
+        "posReceiptsPage",
+        variables={"offset": offset, "limit": _PAGE_SIZE},
+    )
+    return (data.get("posReceiptsPage") or {}).get("posReceipts") or []
+
+
+def _in_window_entries(
+    entries: Sequence[dict], window_start: date
+) -> tuple[list[tuple[str, date]], bool]:
+    """Split one page into its in-window prefix and a window-boundary flag.
+
+    Args:
+        entries: The page entries, newest receipt first.
+        window_start: The first calendar day to include.
+
+    Returns
+    -------
+        A pair of the in-window ``(receipt id, day)`` pairs and whether the
+        page reached an entry older than the window (which ends the paging).
+    """
+    batch: list[tuple[str, date]] = []
+    for entry in entries:
+        day = _receipt_day(entry)
+        if day < window_start:
+            return batch, True
+        batch.append((str(entry["id"]), day))
+    return batch, False
+
+
+def _receipt_items(
+    http: httpx.Client, receipts: Sequence[tuple[str, date]]
+) -> list[ReceiptItem]:
+    """Fetch the line items of the given receipts in aliased batches."""
     items: list[ReceiptItem] = []
     for chunk in _chunked(receipts, _DETAIL_BATCH):
-        chunk_ids = [receipt_id for receipt_id, _ in chunk]
-        data = _graphql(http, _details_query(chunk_ids), "posReceiptDetails")
-        for alias, (_, day) in zip(
-            (f"d{index}" for index in range(len(chunk))), chunk, strict=True
-        ):
-            details = data.get(alias)
-            if not details:
-                continue
-            for product in details.get("products") or []:
-                items.append(_receipt_item(day, product))
+        receipt_ids = [receipt_id for receipt_id, _ in chunk]
+        data = _graphql(http, _details_query(receipt_ids), "posReceiptDetails")
+        items.extend(_batch_items(data, chunk))
+    return items
 
+
+def _batch_items(data: dict, chunk: Sequence[tuple[str, date]]) -> list[ReceiptItem]:
+    """Read one aliased detail batch back into items, keyed by position."""
+    items: list[ReceiptItem] = []
+    for index, (_, day) in enumerate(chunk):
+        for product in _batch_products(data, f"d{index}"):
+            items.append(_receipt_item(day, product))
+    return items
+
+
+def _batch_products(data: dict, alias: str) -> list[dict]:
+    """Return the products under one aliased receipt-detail payload."""
+    details = data.get(alias)
+    if not details:
+        return []
+    return list(details.get("products") or [])
+
+
+def _id_conversion(http: httpx.Client, items: Sequence[ReceiptItem]) -> dict[int, int]:
+    """Resolve the batched POS product ids in aliased batches."""
     conversion: dict[int, int] = {}
     pos_ids = sorted({item.pos_id for item in items if item.pos_id > 0})
     for chunk in _chunked(pos_ids, _ID_BATCH):
         data = _graphql(http, _convert_query(chunk), "productConvertId")
-        for index, pos_id in enumerate(chunk):
-            value = data.get(f"p{index}")
-            if isinstance(value, int) and value > 0:
-                conversion[pos_id] = value
-    return items, conversion
+        conversion.update(_conversion_entries(data, chunk))
+    return conversion
+
+
+def _conversion_entries(data: dict, pos_ids: Sequence[int]) -> dict[int, int]:
+    """Read one aliased conversion batch into resolved id pairs."""
+    conversion: dict[int, int] = {}
+    for index, pos_id in enumerate(pos_ids):
+        value = data.get(f"p{index}")
+        if isinstance(value, int) and value > 0:
+            conversion[pos_id] = value
+    return conversion
 
 
 def enrich_product_names(
@@ -148,41 +223,60 @@ def enrich_product_names(
         webshop_ids: The webshop product ids to look up, in any order and
             with duplicates.
 
-    Returns:
+    Returns
+    -------
         The webshop id to title mapping for the ids the endpoint returned;
         ids the endpoint omits have no entry.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If a request returns a status other than 200 or
             a body that is not a product list.
     """
     names: dict[int, str] = {}
     for chunk in _chunked(list(dict.fromkeys(webshop_ids)), _ID_BATCH):
-        params = [("ids", str(product_id)) for product_id in chunk]
-        response = http.get(
-            PRODUCTS_BY_IDS_URL, params=[*params, ("sortOn", "INPUT_PRODUCT_IDS")]
+        names.update(_batch_titles(http, chunk))
+    return names
+
+
+def _batch_titles(http: httpx.Client, webshop_ids: Sequence[int]) -> dict[int, str]:
+    """Fetch the titles the products endpoint returns for one id batch."""
+    params = [("ids", str(product_id)) for product_id in webshop_ids]
+    response = http.get(
+        PRODUCTS_BY_IDS_URL, params=[*params, ("sortOn", "INPUT_PRODUCT_IDS")]
+    )
+    if response.status_code != 200:
+        raise AlbertHeijnError(
+            f"Product title enrichment failed with status {response.status_code}."
         )
-        if response.status_code != 200:
-            raise AlbertHeijnError(
-                f"Product title enrichment failed with status {response.status_code}."
-            )
+    return _titles_from_products(_product_list(response))
+
+
+def _product_list(response: httpx.Response) -> list:
+    """Return the product list of a products-by-ids response."""
+    try:
+        products = response.json()
+    except ValueError as exc:
+        raise AlbertHeijnError(
+            "Product title enrichment returned an unexpected response."
+        ) from exc
+    if not isinstance(products, list):
+        raise AlbertHeijnError(
+            "Product title enrichment returned an unexpected response."
+        )
+    return products
+
+
+def _titles_from_products(products: Sequence) -> dict[int, str]:
+    """Map products to titles, skipping the entries missing a usable id."""
+    names: dict[int, str] = {}
+    for product in products:
+        if not isinstance(product, dict):
+            continue
         try:
-            products = response.json()
-        except ValueError as exc:
-            raise AlbertHeijnError(
-                "Product title enrichment returned an unexpected response."
-            ) from exc
-        if not isinstance(products, list):
-            raise AlbertHeijnError(
-                "Product title enrichment returned an unexpected response."
-            )
-        for product in products:
-            if not isinstance(product, dict):
-                continue
-            try:
-                names[int(product["webshopId"])] = str(product.get("title") or "")
-            except (KeyError, TypeError, ValueError):
-                continue
+            names[int(product["webshopId"])] = str(product.get("title") or "")
+        except (KeyError, TypeError, ValueError):
+            continue
     return names
 
 
@@ -199,10 +293,12 @@ def _graphql(
             request in error messages.
         variables: The GraphQL variables, if the query takes any.
 
-    Returns:
+    Returns
+    -------
         The response's ``data`` payload.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If the response is not 200, carries a GraphQL
             ``errors`` payload, or has an unexpected shape.
     """
@@ -214,12 +310,12 @@ def _graphql(
         raise AlbertHeijnError(
             f"{operation} failed with status {response.status_code}."
         )
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise AlbertHeijnError(f"{operation} returned an unexpected response.") from exc
-    if not isinstance(body, dict):
-        raise AlbertHeijnError(f"{operation} returned an unexpected response.")
+    return _graphql_data(response, operation)
+
+
+def _graphql_data(response: httpx.Response, operation: str) -> dict:
+    """Return the validated ``data`` payload of a GraphQL response."""
+    body = _json_object(response, operation)
     if body.get("errors"):
         raise AlbertHeijnError(
             f"{operation} returned an error payload (status {response.status_code})."
@@ -228,6 +324,17 @@ def _graphql(
     if not isinstance(data, dict):
         raise AlbertHeijnError(f"{operation} returned an unexpected response.")
     return data
+
+
+def _json_object(response: httpx.Response, operation: str) -> dict:
+    """Parse a response body that must be a JSON object."""
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise AlbertHeijnError(f"{operation} returned an unexpected response.") from exc
+    if not isinstance(body, dict):
+        raise AlbertHeijnError(f"{operation} returned an unexpected response.")
+    return body
 
 
 def _details_query(receipt_ids: Sequence[str]) -> str:

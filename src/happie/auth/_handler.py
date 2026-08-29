@@ -74,7 +74,8 @@ def ensure_handler(path: Path = DESKTOP_ENTRY_PATH) -> None:
         path: Where to write the desktop entry; defaults to
             ``~/.local/share/applications/happie.desktop``.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If the ``happie`` CLI cannot be located on the
             ``PATH``.
     """

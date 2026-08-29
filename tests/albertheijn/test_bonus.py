@@ -103,7 +103,8 @@ def _group(segment_id: str, **overrides) -> dict:
 def test_metadata_returns_active_period_and_national_categories(monkeypatch) -> None:
     """The first period containing today and the NATIONAL tabs come back, in
     the active period's tab order, other bonus types and other periods'
-    categories excluded."""
+    categories excluded.
+    """
     seen: dict[str, httpx.Request] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -146,7 +147,8 @@ def test_metadata_returns_active_period_and_national_categories(monkeypatch) -> 
 
 def test_metadata_without_active_period_yields_no_categories(monkeypatch) -> None:
     """Periods that do not contain today (past or future) yield none, even
-    when they carry national categories."""
+    when they carry national categories.
+    """
     bodies = [
         _metadata_body(
             [
@@ -218,7 +220,8 @@ def test_metadata_active_period_without_tabs_raises(monkeypatch) -> None:
 
 def test_section_sends_category_request_and_unwraps_entries(monkeypatch) -> None:
     """The section request carries the period start, NATIONAL, and category;
-    entries unwrap to raw products and BonusGroup objects in the API's order."""
+    entries unwrap to raw products and BonusGroup objects in the API's order.
+    """
     seen: dict[str, httpx.Request] = {}
     products = [_product(101), _product(102)]
 
@@ -293,7 +296,8 @@ def test_section_unexpected_entry_raises(monkeypatch) -> None:
 
 def test_bonus_promotions_maps_segments_to_product_ids(monkeypatch) -> None:
     """The no-argument bonusPromotions query maps segment ids to product ids;
-    segments without products have no entry."""
+    segments without products have no entry.
+    """
     seen: dict[str, httpx.Request] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -335,7 +339,8 @@ def test_bonus_promotions_empty_list_maps_to_nothing(monkeypatch) -> None:
 
 def test_bonus_promotions_error_payload_raises_without_token(monkeypatch) -> None:
     """A GraphQL errors payload raises AlbertHeijnError without leaking the
-    token."""
+    token.
+    """
     client = _client(
         monkeypatch,
         lambda request: httpx.Response(200, json={"errors": [{"message": "boom"}]}),

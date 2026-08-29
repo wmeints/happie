@@ -6,6 +6,7 @@ purchase-history endpoints live in the ``_receipts``, ``_orders``, and
 ``_history`` submodules, orchestrated by :meth:`AlbertHeijnClient.get_purchase_history`.
 """
 
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -60,11 +61,13 @@ class AlbertHeijnClient:
         Args:
             days: The length of the window in days, ending today.
 
-        Returns:
+        Returns
+        -------
             One :class:`PurchaseStat` per purchased product, sorted by
             total quantity descending.
 
-        Raises:
+        Raises
+        ------
             AuthenticationError: If no usable stored token exists. No
                 request is made in that case.
             AlbertHeijnError: If any purchase-history request fails. No
@@ -116,10 +119,12 @@ class AlbertHeijnClient:
             limit: The maximum number of products to return, in the API's
                 relevance order.
 
-        Returns:
+        Returns
+        -------
             The matching products, at most ``limit`` of them.
 
-        Raises:
+        Raises
+        ------
             AuthenticationError: If no usable stored token exists. No
                 request is made in that case.
             AlbertHeijnError: If the endpoint returns a status other than
@@ -165,13 +170,15 @@ class AlbertHeijnClient:
         first, keeping the API's category order. Folder products the API
         does not flag as bonus are dropped.
 
-        Returns:
+        Returns
+        -------
             One :class:`Product` per on-bonus product, each flagged as
             being on bonus with the deal text as its bonus mechanism. An
             empty list when the current bonus period has no products in
             any national category.
 
-        Raises:
+        Raises
+        ------
             AuthenticationError: If no usable stored token exists. No
                 request is made in that case.
             AlbertHeijnError: If the bonus metadata, any category-section,
@@ -186,52 +193,168 @@ class AlbertHeijnClient:
             period_start, categories = fetch_national_categories(http)
             if not categories:
                 return []
-            sections = [
-                fetch_bonus_section(http, period_start, category)
-                for category in categories
-            ]
-            promotions: dict[str, list[int]] = {}
-            if any(
-                isinstance(entry, BonusGroup)
-                for section in sections
-                for entry in section
-            ):
-                promotions = fetch_bonus_promotions(http)
-            product_ids: list[int] = []
-            seen_ids: set[int] = set()
-            for section in sections:
-                for entry in section:
-                    if isinstance(entry, BonusGroup):
-                        for product_id in promotions.get(entry.segment_id, []):
-                            if product_id not in seen_ids:
-                                seen_ids.add(product_id)
-                                product_ids.append(product_id)
-            raw_by_id = fetch_bonus_products(http, product_ids) if product_ids else {}
-
-            products: list[Product] = []
-            emitted: set[int] = set()
-            for section in sections:
-                for entry in section:
-                    if isinstance(entry, BonusGroup):
-                        raws = [
-                            raw_by_id[product_id]
-                            for product_id in promotions.get(entry.segment_id, [])
-                            if product_id in raw_by_id
-                        ]
-                    else:
-                        raws = [entry]
-                    for raw in raws:
-                        try:
-                            product = product_from_api(raw)
-                        except (KeyError, TypeError, ValueError) as exc:
-                            raise AlbertHeijnError(
-                                "Bonus offers returned an unexpected response."
-                            ) from exc
-                        if not product.is_bonus:
-                            continue
-                        if product.webshop_id not in emitted:
-                            emitted.add(product.webshop_id)
-                            products.append(product)
-            return products
+            entries = _fetch_bonus_entries(http, period_start, categories)
+            promotions = _resolve_promotions(http, entries)
+            group_ids = _group_product_ids(entries, promotions)
+            raw_by_id = fetch_bonus_products(http, group_ids) if group_ids else {}
+            return _products_from_raws(
+                _expand_bonus_entries(entries, promotions, raw_by_id)
+            )
         finally:
             http.close()
+
+
+def _fetch_bonus_entries(
+    http: httpx.Client, period_start: str, categories: Sequence[str]
+) -> list[dict | BonusGroup]:
+    """Fetch every category's bonus section as one ordered entry list.
+
+    Args:
+        http: The preconfigured client carrying the application headers
+            and the user's bearer token.
+        period_start: The active bonus period's start date, as the
+            metadata endpoint formats it.
+        categories: The national bonus categories, in the metadata's
+            order.
+
+    Returns
+    -------
+        The section entries of every category, in category order and,
+        within a category, in the section's own order.
+
+    Raises
+    ------
+        AlbertHeijnError: If any category-section request fails.
+    """
+    sections = [
+        fetch_bonus_section(http, period_start, category) for category in categories
+    ]
+    return [entry for section in sections for entry in section]
+
+
+def _resolve_promotions(
+    http: httpx.Client, entries: Sequence[dict | BonusGroup]
+) -> dict[str, list[int]]:
+    """Resolve the bonus groups' segments, skipping the request when none.
+
+    Args:
+        http: The preconfigured client carrying the application headers
+            and the user's bearer token.
+        entries: The flattened section entries, in order.
+
+    Returns
+    -------
+        The segment id to product id mapping, or an empty mapping when
+        no section entry is a bonus group.
+
+    Raises
+    ------
+        AlbertHeijnError: If the bonus-promotions request fails.
+    """
+    if not any(isinstance(entry, BonusGroup) for entry in entries):
+        return {}
+    return fetch_bonus_promotions(http)
+
+
+def _first_seen(values: Iterable[int]) -> list[int]:
+    """Return ``values`` deduplicated in first-seen order.
+
+    Args:
+        values: The values, possibly with duplicates.
+
+    Returns
+    -------
+        The values with each distinct value kept at its first position.
+    """
+    seen: set[int] = set()
+    unique: list[int] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            unique.append(value)
+    return unique
+
+
+def _group_product_ids(
+    entries: Sequence[dict | BonusGroup], promotions: dict[str, list[int]]
+) -> list[int]:
+    """Collect the product ids the bonus groups expand to.
+
+    Args:
+        entries: The flattened section entries, in order.
+        promotions: The segment id to product id mapping.
+
+    Returns
+    -------
+        The resolved product ids in first-seen order: each group
+        contributes its segment's ids in the promotions' order, a
+        product in more than one group is listed once, and groups whose
+        segment has no entry contribute nothing.
+    """
+    return _first_seen(
+        product_id
+        for entry in entries
+        if isinstance(entry, BonusGroup)
+        for product_id in promotions.get(entry.segment_id, [])
+    )
+
+
+def _expand_bonus_entries(
+    entries: Sequence[dict | BonusGroup],
+    promotions: dict[str, list[int]],
+    raw_by_id: dict[int, dict],
+) -> Iterator[dict]:
+    """Yield the raw product objects behind the section entries.
+
+    Args:
+        entries: The flattened section entries, in order.
+        promotions: The segment id to product id mapping.
+        raw_by_id: The raw product objects the product lookup returned.
+
+    Yields
+    ------
+        Plain entries as-is; each bonus group yields its resolved
+        products in the promotions' order, skipping ids the product
+        lookup did not return.
+    """
+    for entry in entries:
+        if isinstance(entry, BonusGroup):
+            for product_id in promotions.get(entry.segment_id, []):
+                if product_id in raw_by_id:
+                    yield raw_by_id[product_id]
+        else:
+            yield entry
+
+
+def _products_from_raws(raws: Iterable[dict]) -> list[Product]:
+    """Build the bonus products from raw product objects.
+
+    Args:
+        raws: The raw product objects in emission order.
+
+    Returns
+    -------
+        One product per distinct on-bonus webshop id, first occurrence
+        first; products the API does not flag as bonus contribute
+        nothing.
+
+    Raises
+    ------
+        AlbertHeijnError: If a raw object has an unexpected shape.
+    """
+    products: list[Product] = []
+    emitted: set[int] = set()
+    for raw in raws:
+        try:
+            product = product_from_api(raw)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AlbertHeijnError(
+                "Bonus offers returned an unexpected response."
+            ) from exc
+        if not product.is_bonus:
+            continue
+        if product.webshop_id in emitted:
+            continue
+        emitted.add(product.webshop_id)
+        products.append(product)
+    return products

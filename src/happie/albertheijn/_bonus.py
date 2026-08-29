@@ -34,6 +34,9 @@ SECTION_URL = "https://api.ah.nl/mobile-services/bonuspage/v2/section"
 #: Product ids per products-by-ids batch.
 _ID_BATCH = 100
 
+#: Message raised for any bonus metadata body that cannot be used.
+_UNEXPECTED_METADATA = "Bonus metadata returned an unexpected response."
+
 _BONUS_PROMOTIONS_QUERY = """
 query {
   bonusPromotions {
@@ -50,7 +53,8 @@ query {
 class BonusGroup:
     """One multi-product bonus group (a segment offer) from a section.
 
-    Attributes:
+    Attributes
+    ----------
         segment_id: The promotion segment id, as a string.
         description: The group's description (for example "Alle Galbani").
         discount: The group's deal text (for example "1+1 gratis").
@@ -73,7 +77,8 @@ def fetch_national_categories(http: httpx.Client) -> tuple[str, list[str]]:
         http: The preconfigured client carrying the application headers and
             the user's bearer token.
 
-    Returns:
+    Returns
+    -------
         A pair of:
 
         - the active period's start date as a plain ``YYYY-MM-DD`` string,
@@ -81,10 +86,19 @@ def fetch_national_categories(http: httpx.Client) -> tuple[str, list[str]]:
         - the descriptions of the ``NATIONAL`` bonus categories, in the
           metadata's order.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If the request returns a status other than 200 or
             an unexpected body.
     """
+    active = _active_period(_metadata_periods(http))
+    if active is None:
+        return "", []
+    return str(active["bonusStartDate"]), _national_categories(active)
+
+
+def _metadata_periods(http: httpx.Client) -> list:
+    """Fetch the bonus metadata and return its raw periods list."""
     response = http.get(METADATA_URL)
     if response.status_code != 200:
         raise AlbertHeijnError(
@@ -93,56 +107,69 @@ def fetch_national_categories(http: httpx.Client) -> tuple[str, list[str]]:
     try:
         body = response.json()
     except ValueError as exc:
-        raise AlbertHeijnError(
-            "Bonus metadata returned an unexpected response."
-        ) from exc
+        raise AlbertHeijnError(_UNEXPECTED_METADATA) from exc
     if not isinstance(body, dict):
-        raise AlbertHeijnError("Bonus metadata returned an unexpected response.")
+        raise AlbertHeijnError(_UNEXPECTED_METADATA)
     periods = body.get("periods")
     if not isinstance(periods, list):
-        raise AlbertHeijnError("Bonus metadata returned an unexpected response.")
+        raise AlbertHeijnError(_UNEXPECTED_METADATA)
+    return periods
+
+
+def _active_period(periods: list) -> dict | None:
+    """Return the first period whose bonus range contains today (UTC)."""
     today = datetime.now(UTC).date()
-    active: dict | None = None
     for period in periods:
         if not isinstance(period, dict):
-            raise AlbertHeijnError("Bonus metadata returned an unexpected response.")
-        try:
-            start = date.fromisoformat(str(period["bonusStartDate"]))
-            end = date.fromisoformat(str(period["bonusEndDate"]))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise AlbertHeijnError(
-                "Bonus metadata returned an unexpected response."
-            ) from exc
-        if start <= today <= end:
-            active = period
-            break
-    if active is None:
-        return "", []
+            raise AlbertHeijnError(_UNEXPECTED_METADATA)
+        if _covers_today(period, today):
+            return period
+    return None
 
+
+def _covers_today(period: dict, today: date) -> bool:
+    """Check whether the period's start/end dates contain ``today``."""
+    try:
+        start = date.fromisoformat(str(period["bonusStartDate"]))
+        end = date.fromisoformat(str(period["bonusEndDate"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AlbertHeijnError(_UNEXPECTED_METADATA) from exc
+    return start <= today <= end
+
+
+def _national_categories(active: dict) -> list[str]:
+    """Collect the NATIONAL descriptions of the active period's tabs."""
     tabs = active.get("tabs")
     if not isinstance(tabs, list):
-        raise AlbertHeijnError("Bonus metadata returned an unexpected response.")
-
+        raise AlbertHeijnError(_UNEXPECTED_METADATA)
     categories: list[str] = []
     for tab in tabs:
-        try:
-            entries = tab["urlMetadataList"]
-        except (KeyError, TypeError) as exc:
-            raise AlbertHeijnError(
-                "Bonus metadata returned an unexpected response."
-            ) from exc
-        if not isinstance(entries, list):
-            raise AlbertHeijnError("Bonus metadata returned an unexpected response.")
-        for entry in entries:
-            if not isinstance(entry, dict) or entry.get("bonusType") != "NATIONAL":
-                continue
-            description = entry.get("description")
-            if not isinstance(description, str) or not description:
-                raise AlbertHeijnError(
-                    "Bonus metadata returned an unexpected response."
-                )
-            categories.append(description)
-    return str(active["bonusStartDate"]), categories
+        categories.extend(_national_tab(tab))
+    return categories
+
+
+def _national_tab(tab: dict) -> list[str]:
+    """Return the NATIONAL category descriptions served by one tab."""
+    try:
+        entries = tab["urlMetadataList"]
+    except (KeyError, TypeError) as exc:
+        raise AlbertHeijnError(_UNEXPECTED_METADATA) from exc
+    if not isinstance(entries, list):
+        raise AlbertHeijnError(_UNEXPECTED_METADATA)
+    return [_category_description(entry) for entry in entries if _is_national(entry)]
+
+
+def _is_national(entry: object) -> bool:
+    """Check whether a metadata entry is a NATIONAL bonus tab entry."""
+    return isinstance(entry, dict) and entry.get("bonusType") == "NATIONAL"
+
+
+def _category_description(entry: dict) -> str:
+    """Return one NATIONAL entry's non-empty category description."""
+    description = entry.get("description")
+    if not isinstance(description, str) or not description:
+        raise AlbertHeijnError(_UNEXPECTED_METADATA)
+    return description
 
 
 def fetch_bonus_section(
@@ -156,15 +183,31 @@ def fetch_bonus_section(
         period_start: The bonus period's start date (``YYYY-MM-DD``).
         category: The national category's description.
 
-    Returns:
+    Returns
+    -------
         The section's ``bonusGroupOrProducts`` entries in the API's order,
         unwrapped from their one-key containers: raw product objects (the
         search API's shape) and :class:`BonusGroup` objects.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If the request returns a status other than 200 or
             an unexpected body.
     """
+    body = _section_response(http, period_start, category)
+    entries = body.get("bonusGroupOrProducts")
+    if not isinstance(entries, list):
+        raise AlbertHeijnError(
+            f"Bonus section for {category} returned an unexpected response."
+        )
+    section: list[dict | BonusGroup] = []
+    for entry in entries:
+        section.append(_section_entry(entry, category))
+    return section
+
+
+def _section_response(http: httpx.Client, period_start: str, category: str) -> dict:
+    """Request one category's section and return its decoded object body."""
     response = http.get(
         SECTION_URL,
         params={
@@ -188,26 +231,27 @@ def fetch_bonus_section(
         raise AlbertHeijnError(
             f"Bonus section for {category} returned an unexpected response."
         )
-    entries = body.get("bonusGroupOrProducts")
-    if not isinstance(entries, list):
-        raise AlbertHeijnError(
-            f"Bonus section for {category} returned an unexpected response."
-        )
+    return body
 
-    section: list[dict | BonusGroup] = []
-    for entry in entries:
-        if not isinstance(entry, dict) or not (
-            isinstance(entry.get("product"), dict)
-            or isinstance(entry.get("bonusGroup"), dict)
-        ):
-            raise AlbertHeijnError(
-                f"Bonus section for {category} returned an unexpected response."
-            )
-        if "product" in entry:
-            section.append(entry["product"])
-        else:
-            section.append(_bonus_group(entry["bonusGroup"], category))
-    return section
+
+def _section_entry(entry: dict, category: str) -> dict | BonusGroup:
+    """Unwrap one section entry into its raw product or bonus group."""
+    _require_product_or_group(entry, category)
+    if "product" in entry:
+        return entry["product"]
+    return _bonus_group(entry["bonusGroup"], category)
+
+
+def _require_product_or_group(entry: object, category: str) -> None:
+    """Raise unless the entry carries a product or a bonus group object."""
+    if isinstance(entry, dict) and (
+        isinstance(entry.get("product"), dict)
+        or isinstance(entry.get("bonusGroup"), dict)
+    ):
+        return
+    raise AlbertHeijnError(
+        f"Bonus section for {category} returned an unexpected response."
+    )
 
 
 def _bonus_group(group: dict, category: str) -> BonusGroup:
@@ -235,12 +279,14 @@ def fetch_bonus_promotions(http: httpx.Client) -> dict[str, list[int]]:
         http: The preconfigured client carrying the application headers and
             the user's bearer token.
 
-    Returns:
+    Returns
+    -------
         The segment id to product (webshop) id mapping, with each
         segment's product ids in the API's order; segments serving no
         products have no entry.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If the response is not 200, carries a GraphQL
             ``errors`` payload, or has an unexpected shape.
     """
@@ -248,29 +294,36 @@ def fetch_bonus_promotions(http: httpx.Client) -> dict[str, list[int]]:
     promotions = data.get("bonusPromotions")
     if not isinstance(promotions, list):
         raise AlbertHeijnError("Bonus promotions returned an unexpected response.")
-
     mapping: dict[str, list[int]] = {}
     for promotion in promotions:
-        try:
-            segment_id = str(promotion["id"])
-            products = promotion["products"]
-        except (KeyError, TypeError) as exc:
-            raise AlbertHeijnError(
-                "Bonus promotions returned an unexpected response."
-            ) from exc
-        if not isinstance(products, list):
-            raise AlbertHeijnError("Bonus promotions returned an unexpected response.")
-        product_ids: list[int] = []
-        for product in products:
-            if not isinstance(product, dict):
-                continue
-            try:
-                product_ids.append(int(product["id"]))
-            except (KeyError, TypeError, ValueError):
-                continue
+        segment_id, product_ids = _promotion_segment(promotion)
         if product_ids:
             mapping[segment_id] = product_ids
     return mapping
+
+
+def _promotion_segment(promotion: dict) -> tuple[str, list[int]]:
+    """Return one promotion's segment id and its usable product ids."""
+    try:
+        segment_id = str(promotion["id"])
+        products = promotion["products"]
+    except (KeyError, TypeError) as exc:
+        raise AlbertHeijnError(
+            "Bonus promotions returned an unexpected response."
+        ) from exc
+    if not isinstance(products, list):
+        raise AlbertHeijnError("Bonus promotions returned an unexpected response.")
+    return segment_id, _promotion_product_ids(products)
+
+
+def _promotion_product_ids(products: list) -> list[int]:
+    """Collect the numeric ids of the promotion's products, in order."""
+    product_ids: list[int] = []
+    for product in products:
+        product_id = _numeric_id(product, "id")
+        if product_id is not None:
+            product_ids.append(product_id)
+    return product_ids
 
 
 def fetch_bonus_products(
@@ -287,41 +340,50 @@ def fetch_bonus_products(
         webshop_ids: The product ids to look up, in any order and with
             duplicates.
 
-    Returns:
+    Returns
+    -------
         The webshop id to raw product object mapping for the ids the
         endpoint returned; ids the endpoint omits have no entry.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If a request returns a status other than 200 or
             a body that is not a product list.
     """
     products: dict[int, dict] = {}
     for chunk in _chunked(list(dict.fromkeys(webshop_ids)), _ID_BATCH):
-        params = [("ids", str(product_id)) for product_id in chunk]
-        response = http.get(
-            PRODUCTS_BY_IDS_URL, params=[*params, ("sortOn", "INPUT_PRODUCT_IDS")]
+        products.update(_product_batch(http, chunk))
+    return products
+
+
+def _product_batch(http: httpx.Client, chunk: list) -> dict[int, dict]:
+    """Fetch one batch of product ids and index the served products."""
+    params = [("ids", str(product_id)) for product_id in chunk]
+    response = http.get(
+        PRODUCTS_BY_IDS_URL, params=[*params, ("sortOn", "INPUT_PRODUCT_IDS")]
+    )
+    if response.status_code != 200:
+        raise AlbertHeijnError(
+            f"Bonus product lookup failed with status {response.status_code}."
         )
-        if response.status_code != 200:
-            raise AlbertHeijnError(
-                f"Bonus product lookup failed with status {response.status_code}."
-            )
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise AlbertHeijnError(
-                "Bonus product lookup returned an unexpected response."
-            ) from exc
-        if not isinstance(body, list):
-            raise AlbertHeijnError(
-                "Bonus product lookup returned an unexpected response."
-            )
-        for product in body:
-            if not isinstance(product, dict):
-                continue
-            try:
-                products[int(product["webshopId"])] = product
-            except (KeyError, TypeError, ValueError):
-                continue
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise AlbertHeijnError(
+            "Bonus product lookup returned an unexpected response."
+        ) from exc
+    if not isinstance(body, list):
+        raise AlbertHeijnError("Bonus product lookup returned an unexpected response.")
+    return _indexed_products(body)
+
+
+def _indexed_products(body: list) -> dict[int, dict]:
+    """Index the returned product objects by their webshop id."""
+    products: dict[int, dict] = {}
+    for product in body:
+        webshop_id = _numeric_id(product, "webshopId")
+        if webshop_id is not None:
+            products[webshop_id] = product
     return products
 
 
@@ -335,10 +397,12 @@ def _graphql(http: httpx.Client, query: str, operation: str) -> dict:
         operation: The operation name, used to identify the failing
             request in error messages.
 
-    Returns:
+    Returns
+    -------
         The response's ``data`` payload.
 
-    Raises:
+    Raises
+    ------
         AlbertHeijnError: If the response is not 200, carries a GraphQL
             ``errors`` payload, or has an unexpected shape.
     """
@@ -347,12 +411,7 @@ def _graphql(http: httpx.Client, query: str, operation: str) -> dict:
         raise AlbertHeijnError(
             f"{operation} failed with status {response.status_code}."
         )
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise AlbertHeijnError(f"{operation} returned an unexpected response.") from exc
-    if not isinstance(body, dict):
-        raise AlbertHeijnError(f"{operation} returned an unexpected response.")
+    body = _graphql_body(response, operation)
     if body.get("errors"):
         raise AlbertHeijnError(
             f"{operation} returned an error payload (status {response.status_code})."
@@ -361,6 +420,27 @@ def _graphql(http: httpx.Client, query: str, operation: str) -> dict:
     if not isinstance(data, dict):
         raise AlbertHeijnError(f"{operation} returned an unexpected response.")
     return data
+
+
+def _graphql_body(response: httpx.Response, operation: str) -> dict:
+    """Return the GraphQL response's decoded object body."""
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise AlbertHeijnError(f"{operation} returned an unexpected response.") from exc
+    if not isinstance(body, dict):
+        raise AlbertHeijnError(f"{operation} returned an unexpected response.")
+    return body
+
+
+def _numeric_id(entry: object, key: str) -> int | None:
+    """Return one product entry's ``key`` as an int, or ``None``."""
+    if not isinstance(entry, dict):
+        return None
+    try:
+        return int(entry[key])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _chunked(items: Sequence, size: int) -> list[list]:

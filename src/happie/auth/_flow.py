@@ -44,7 +44,8 @@ def extract_code(raw: str) -> str | None:
     Args:
         raw: The text the user pasted after logging in.
 
-    Returns:
+    Returns
+    -------
         The code, or ``None`` when the input looks like a URL or query string
         but carries no ``code`` value.
     """
@@ -72,10 +73,12 @@ def exchange_code(
         client: An optional ``httpx.Client`` (e.g. backed by a mock transport
             in tests). A disposable client is created and closed when omitted.
 
-    Returns:
+    Returns
+    -------
         A tuple of ``(access_token, refresh_token, expires_in)``.
 
-    Raises:
+    Raises
+    ------
         AuthenticationError: If the endpoint returns a non-2xx status or a 2xx
             body missing a required field.
     """

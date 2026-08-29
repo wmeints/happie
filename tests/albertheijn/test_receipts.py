@@ -54,38 +54,55 @@ class GraphQLRecorder:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        canned = self._canned_error()
+        if canned is not None:
+            return canned
+        body = json.loads(request.content)
+        query = body["query"]
+        if "posReceiptsPage" in query:
+            return self._page(body)
+        if "posReceiptDetails" in query:
+            return self._details(query)
+        if "productConvertId" in query:
+            return self._convert(query)
+        raise AssertionError(f"unexpected query: {query}")
+
+    def _canned_error(self) -> httpx.Response | None:
+        """Response forced by the ``status``/``errors`` flags, else ``None``."""
         if self.status != 200:
             return httpx.Response(self.status)
         if self.errors:
             return httpx.Response(200, json={"errors": [{"message": "boom"}]})
-        body = json.loads(request.content)
-        query = body["query"]
-        if "posReceiptsPage" in query:
-            offset = body["variables"]["offset"]
-            return httpx.Response(
-                200,
-                json={
-                    "data": {
-                        "posReceiptsPage": {"posReceipts": self.pages.get(offset, [])}
-                    }
-                },
+        return None
+
+    def _page(self, body: dict) -> httpx.Response:
+        """Canned receipt page for the request's offset."""
+        offset = body["variables"]["offset"]
+        return httpx.Response(
+            200,
+            json={
+                "data": {"posReceiptsPage": {"posReceipts": self.pages.get(offset, [])}}
+            },
+        )
+
+    def _details(self, query: str) -> httpx.Response:
+        """Canned per-alias receipt details (null for unknown ids)."""
+        aliases = re.findall(r'(d\d+): posReceiptDetails\(id: "([^"]+)"\)', query)
+        data = {
+            alias: (
+                {"products": self.details[receipt_id]}
+                if receipt_id in self.details
+                else None
             )
-        if "posReceiptDetails" in query:
-            aliases = re.findall(r'(d\d+): posReceiptDetails\(id: "([^"]+)"\)', query)
-            data = {
-                alias: (
-                    {"products": self.details[receipt_id]}
-                    if receipt_id in self.details
-                    else None
-                )
-                for alias, receipt_id in aliases
-            }
-            return httpx.Response(200, json={"data": data})
-        if "productConvertId" in query:
-            aliases = re.findall(r"(p\d+): productConvertId\(sourceId: (\d+)\)", query)
-            data = {alias: self.conversion(int(pos_id)) for alias, pos_id in aliases}
-            return httpx.Response(200, json={"data": data})
-        raise AssertionError(f"unexpected query: {query}")
+            for alias, receipt_id in aliases
+        }
+        return httpx.Response(200, json={"data": data})
+
+    def _convert(self, query: str) -> httpx.Response:
+        """Canned pos-id to webshop-id conversions."""
+        aliases = re.findall(r"(p\d+): productConvertId\(sourceId: (\d+)\)", query)
+        data = {alias: self.conversion(int(pos_id)) for alias, pos_id in aliases}
+        return httpx.Response(200, json={"data": data})
 
 
 def _receipt(receipt_id: str, day: str, amount: float = 10.0) -> dict:

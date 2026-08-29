@@ -19,22 +19,28 @@ mcp = FastMCP("happie")
 def search_products(query: str, limit: int = 10) -> list[Product]:
     """Search the Albert Heijn assortment for a product.
 
-    Args:
-        query: The search term.
-        limit: The maximum number of products to return.
+    Parameters
+    ----------
+    query : str
+        The search term.
+    limit : int
+        The maximum number of products to return. Defaults to 10.
 
     Returns
     -------
-        The matching products, at most ``limit`` of them, in the API's
+    list[Product]
+        The matching products, at most `limit` of them, in the API's
         relevance order. Each product carries its webshop identifier, name,
         brand, current and pre-bonus price, bonus information, package
         size, online availability, and main category.
 
     Raises
     ------
-        AuthenticationError: If no usable stored token exists.
-        AlbertHeijnError: If the search endpoint fails.
-    """
+    AuthenticationError
+        If no usable stored token exists.
+    AlbertHeijnError
+        If the search endpoint fails.
+    """  # noqa: DOC502, RUF100
     return AlbertHeijnClient().search_products(query, limit)
 
 
@@ -45,13 +51,17 @@ def purchase_frequency(days: int = 90, limit: int | None = None) -> list[Purchas
     Merges in-store receipts and delivered webshop orders, so a product
     bought in both places appears once, with the combined quantities.
 
-    Args:
-        days: The length of the window in days, ending today.
-        limit: The maximum number of statistics to return; the highest
-            total quantities come first. None returns all statistics.
+    Parameters
+    ----------
+    days : int
+        The length of the window in days, ending today. Defaults to 90.
+    limit : int | None
+        The maximum number of statistics to return; the highest
+        total quantities come first. ``None`` returns all statistics.
 
     Returns
     -------
+    list[PurchaseStat]
         One statistic per purchased product, sorted by total quantity
         descending. Each carries its product key, name, total quantity,
         total spend, and a sparse per-day histogram with one entry per
@@ -60,9 +70,11 @@ def purchase_frequency(days: int = 90, limit: int | None = None) -> list[Purchas
 
     Raises
     ------
-        AuthenticationError: If no usable stored token exists.
-        AlbertHeijnError: If the purchase-history endpoints fail.
-    """
+    AuthenticationError
+        If no usable stored token exists.
+    AlbertHeijnError
+        If the purchase-history endpoints fail.
+    """  # noqa: DOC502, RUF100
     stats = AlbertHeijnClient().get_purchase_history(days)
     if limit is not None:
         stats = stats[:limit]
@@ -77,21 +89,26 @@ def bonus_offers(limit: int | None = None) -> list[Product]:
     group expanded to its concrete products. A product listed in more than
     one place appears exactly once, in the API's category order.
 
-    Args:
-        limit: The maximum number of products to return, in the API's
-            category order. None returns all products.
+    Parameters
+    ----------
+    limit : int | None
+        The maximum number of products to return, in the API's category
+        order. ``None`` returns all products.
 
     Returns
     -------
+    list[Product]
         One product per on-bonus product. Each carries its webshop
         identifier, name, brand, prices, the deal text as bonus mechanism,
         package size, online availability, and bonus category.
 
     Raises
     ------
-        AuthenticationError: If no usable stored token exists.
-        AlbertHeijnError: If the bonus endpoints fail.
-    """
+    AuthenticationError
+        If no usable stored token exists.
+    AlbertHeijnError
+        If the bonus endpoints fail.
+    """  # noqa: DOC502, RUF100
     products = AlbertHeijnClient().get_bonus_offers()
     if limit is not None:
         products = products[:limit]

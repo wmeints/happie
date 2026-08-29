@@ -20,6 +20,13 @@ repos:
           - "ty==0.0.75"
           - "typer>=0.27.1"
         types: [python]
+      - id: pydoclint
+        name: pydoclint
+        entry: pydoclint
+        language: python
+        additional_dependencies: ["pydoclint==0.9.1"]
+        files: ^src/
+        types: [python]
       - id: conventional-commits
         name: conventional-commits
         entry: conventional-pre-commit --strict

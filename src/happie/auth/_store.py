@@ -26,9 +26,12 @@ class Token:
 
     Attributes
     ----------
-        access_token: The bearer token for calling the Albert Heijn API.
-        refresh_token: The refresh token used to obtain a new access token.
-        expires_at: The moment the access token expires (timezone-aware UTC).
+    access_token : str
+        The bearer token for calling the Albert Heijn API.
+    refresh_token : str
+        The refresh token used to obtain a new access token.
+    expires_at : datetime
+        The moment the access token expires (timezone-aware UTC).
     """
 
     access_token: str
@@ -37,16 +40,19 @@ class Token:
 
 
 def save_token(token: Token, path: Path = DEFAULT_TOKEN_PATH) -> None:
-    """Write ``token`` to ``path`` as JSON, readable only by the user.
+    """Write the tokens to a JSON file, readable only by the user.
 
     Creates the parent directory (``0700``) when missing and the file
     (``0600``), replacing any pre-existing token. Modes are applied with an
     explicit ``chmod`` after creation so umask cannot weaken them.
 
-    Args:
-        token: The tokens to persist.
-        path: Where to write the JSON file; defaults to
-            ``~/.config/happie/token``.
+    Parameters
+    ----------
+    token : Token
+        The tokens to persist.
+    path : Path
+        Where to write the JSON file; defaults to
+        ``~/.config/happie/token``.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -61,17 +67,20 @@ def save_token(token: Token, path: Path = DEFAULT_TOKEN_PATH) -> None:
 
 
 def load_token(path: Path = DEFAULT_TOKEN_PATH) -> Token | None:
-    """Parse the stored-token JSON at ``path`` into a :class:`Token`.
+    """Parse the stored-token JSON file into a :class:`Token`.
 
-    Args:
-        path: Where to read the JSON file; defaults to
-            ``~/.config/happie/token``.
+    Parameters
+    ----------
+    path : Path
+        Where to read the JSON file; defaults to
+        ``~/.config/happie/token``.
 
     Returns
     -------
-        The parsed token, or ``None`` when the file is missing, unreadable,
-        or does not carry the three stored-token fields with a parseable,
-        timezone-aware ``expires_at``.
+    Token | None
+        The parsed token, or ``None`` when the file is missing,
+        unreadable, or does not carry the three stored-token fields with
+        a parseable, timezone-aware ``expires_at``.
     """
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -83,11 +92,14 @@ def load_token(path: Path = DEFAULT_TOKEN_PATH) -> Token | None:
 def _parse_token(payload: object) -> Token | None:
     """Validate a decoded token-file payload and build a :class:`Token`.
 
-    Args:
-        payload: The value decoded from the token JSON file.
+    Parameters
+    ----------
+    payload : object
+        The value decoded from the token JSON file.
 
     Returns
     -------
+    Token | None
         The token described by ``payload``, or ``None`` when it is not a
         mapping carrying the three stored-token fields with a parseable,
         timezone-aware ``expires_at``.
@@ -111,11 +123,14 @@ def _parse_token(payload: object) -> Token | None:
 def _parse_expiry(value: object) -> datetime | None:
     """Parse a stored ``expires_at`` value into a timezone-aware datetime.
 
-    Args:
-        value: The raw value stored under the ``expires_at`` key.
+    Parameters
+    ----------
+    value : object
+        The raw value stored under the ``expires_at`` key.
 
     Returns
     -------
+    datetime | None
         The parsed datetime, or ``None`` when ``value`` is not a string,
         is not ISO-8601 parseable, or carries no timezone information.
     """

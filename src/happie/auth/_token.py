@@ -34,26 +34,31 @@ def get_access_token(
     """Return a usable Albert Heijn access token.
 
     Returns the stored access token while it is valid. When it has expired
-    (or is within a five-minute safety skew of expiry), it is refreshed via
-    the refresh endpoint and the refreshed pair is re-stored.
+    (or is within a five-minute safety skew of expiry), it is refreshed
+    via the refresh endpoint and the refreshed pair is re-stored.
 
-    Args:
-        path: Where the token JSON file lives; defaults to
-            ``~/.config/happie/token``.
-        client: An optional ``httpx.Client`` (e.g. backed by a mock
-            transport in tests). A disposable client is created and closed
-            when a refresh is needed and no client is given.
+    Parameters
+    ----------
+    path : Path
+        Where the token JSON file lives; defaults to
+        ``~/.config/happie/token``.
+    client : httpx.Client | None
+        An optional ``httpx.Client`` (e.g. backed by a mock transport in
+        tests). A disposable client is created and closed when a refresh
+        is needed and no client is given.
 
     Returns
     -------
+    str
         The access token to use as the bearer credential.
 
     Raises
     ------
-        AuthenticationError: If no token is stored, or the refresh request
-            fails or returns an unexpected body. No token value ever appears
-            in a raised message or in log output.
-    """
+    AuthenticationError
+        If no token is stored, or the refresh request fails or returns an
+        unexpected body. No token value ever appears in a raised message
+        or in log output.
+    """  # noqa: DOC502, RUF100
     token = _load_token(path)
     if token.expires_at - _SAFETY_SKEW > datetime.now(UTC):
         return token.access_token

@@ -31,11 +31,16 @@ class OrderItem:
 
     Attributes
     ----------
-        date: The delivery day of the order.
-        webshop_id: The webshop product id.
-        name: The product title.
-        quantity: The ordered quantity.
-        amount: The amount spent on the line (quantity times price).
+    date : date
+        The delivery day of the order.
+    webshop_id : int
+        The webshop product id.
+    name : str
+        The product title.
+    quantity : float
+        The ordered quantity.
+    amount : float
+        The amount spent on the line (quantity times price).
     """
 
     date: date
@@ -50,23 +55,29 @@ def fetch_order_history(
 ) -> list[OrderItem]:
     """Fetch the line items of delivered webshop orders inside the window.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        window_start: The first calendar day to include.
-        days: The length of the window in days.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    window_start : date
+        The first calendar day to include.
+    days : int
+        The length of the window in days.
 
     Returns
     -------
+    list[OrderItem]
         The line items of all delivered orders delivered on a day in
         ``[window_start, window_start + days - 1]``, in summary order.
         Cancelled and still-open orders contribute nothing.
 
     Raises
     ------
-        AlbertHeijnError: If the summaries or any order-details request
-            returns a status other than 200 or an unexpected body.
-    """
+    AlbertHeijnError
+        If the summaries or any order-details request returns a status
+        other than 200 or an unexpected body.
+    """  # noqa: DOC502, RUF100
     summaries = _fetch_summaries(http)
     window_end = window_start + timedelta(days=days - 1)
     items: list[OrderItem] = []
@@ -100,7 +111,7 @@ def _fetch_summaries(http: httpx.Client) -> list:
 def _window_delivery_day(
     summary: dict, window_start: date, window_end: date
 ) -> date | None:
-    """Return the delivery day for a delivered in-window summary, else None."""
+    """Return the delivery day if delivered in-window, else None."""
     if not isinstance(summary, dict) or summary.get("state") != "DELIVERED":
         return None
     delivery_date = _summary_day(summary)

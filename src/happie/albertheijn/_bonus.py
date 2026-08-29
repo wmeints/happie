@@ -1,4 +1,4 @@
-"""I/O for the bonus-page (bonus aanbiedingen) endpoints of the Albert Heijn API.
+"""I/O for the Albert Heijn bonus-page (bonus aanbiedingen) API endpoints.
 
 Holds the fetches behind the weekly bonus folder: the bonus metadata (the
 active period and its national categories), one category's bonus section
@@ -55,10 +55,14 @@ class BonusGroup:
 
     Attributes
     ----------
-        segment_id: The promotion segment id, as a string.
-        description: The group's description (for example "Alle Galbani").
-        discount: The group's deal text (for example "1+1 gratis").
-        category: The national category the group is listed under.
+    segment_id : str
+        The promotion segment id, as a string.
+    description : str
+        The group's description (for example "Alle Galbani").
+    discount : str
+        The group's deal text (for example "1+1 gratis").
+    category : str
+        The national category the group is listed under.
     """
 
     segment_id: str
@@ -73,12 +77,15 @@ def fetch_national_categories(http: httpx.Client) -> tuple[str, list[str]]:
     The active period is the first metadata period whose
     ``bonusStartDate``..``bonusEndDate`` range contains today (UTC).
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
 
     Returns
     -------
+    tuple[str, list[str]]
         A pair of:
 
         - the active period's start date as a plain ``YYYY-MM-DD`` string,
@@ -88,9 +95,10 @@ def fetch_national_categories(http: httpx.Client) -> tuple[str, list[str]]:
 
     Raises
     ------
-        AlbertHeijnError: If the request returns a status other than 200 or
-            an unexpected body.
-    """
+    AlbertHeijnError
+        If the request returns a status other than 200 or an unexpected
+        body.
+    """  # noqa: DOC502, RUF100
     active = _active_period(_metadata_periods(http))
     if active is None:
         return "", []
@@ -128,7 +136,7 @@ def _active_period(periods: list) -> dict | None:
 
 
 def _covers_today(period: dict, today: date) -> bool:
-    """Check whether the period's start/end dates contain ``today``."""
+    """Check whether a period's start/end dates contain a given date."""
     try:
         start = date.fromisoformat(str(period["bonusStartDate"]))
         end = date.fromisoformat(str(period["bonusEndDate"]))
@@ -177,22 +185,28 @@ def fetch_bonus_section(
 ) -> list[dict | BonusGroup]:
     """Fetch one national category's bonus section.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        period_start: The bonus period's start date (``YYYY-MM-DD``).
-        category: The national category's description.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    period_start : str
+        The bonus period's start date (``YYYY-MM-DD``).
+    category : str
+        The national category's description.
 
     Returns
     -------
-        The section's ``bonusGroupOrProducts`` entries in the API's order,
-        unwrapped from their one-key containers: raw product objects (the
-        search API's shape) and :class:`BonusGroup` objects.
+    list[dict | BonusGroup]
+        The section's ``bonusGroupOrProducts`` entries in the API's
+        order, unwrapped from their one-key containers: raw product
+        objects (the search API's shape) and :class:`BonusGroup` objects.
 
     Raises
     ------
-        AlbertHeijnError: If the request returns a status other than 200 or
-            an unexpected body.
+    AlbertHeijnError
+        If the request returns a status other than 200 or an unexpected
+        body.
     """
     body = _section_response(http, period_start, category)
     entries = body.get("bonusGroupOrProducts")
@@ -207,7 +221,7 @@ def fetch_bonus_section(
 
 
 def _section_response(http: httpx.Client, period_start: str, category: str) -> dict:
-    """Request one category's section and return its decoded object body."""
+    """Request a category's section and return its decoded object body."""
     response = http.get(
         SECTION_URL,
         params={
@@ -275,20 +289,24 @@ def fetch_bonus_promotions(http: httpx.Client) -> dict[str, list[int]]:
     Uses the no-argument ``bonusPromotions`` GraphQL query, which returns
     every segment the API currently serves.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
 
     Returns
     -------
+    dict[str, list[int]]
         The segment id to product (webshop) id mapping, with each
         segment's product ids in the API's order; segments serving no
         products have no entry.
 
     Raises
     ------
-        AlbertHeijnError: If the response is not 200, carries a GraphQL
-            ``errors`` payload, or has an unexpected shape.
+    AlbertHeijnError
+        If the response is not 200, carries a GraphQL ``errors`` payload,
+        or has an unexpected shape.
     """
     data = _graphql(http, _BONUS_PROMOTIONS_QUERY, "Bonus promotions")
     promotions = data.get("bonusPromotions")
@@ -334,22 +352,26 @@ def fetch_bonus_products(
     Requests the ids in batches at the products-by-ids endpoint, the same
     endpoint the receipt enrichment uses.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        webshop_ids: The product ids to look up, in any order and with
-            duplicates.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    webshop_ids : Sequence[int]
+        The product ids to look up, in any order and with duplicates.
 
     Returns
     -------
+    dict[int, dict]
         The webshop id to raw product object mapping for the ids the
         endpoint returned; ids the endpoint omits have no entry.
 
     Raises
     ------
-        AlbertHeijnError: If a request returns a status other than 200 or
-            a body that is not a product list.
-    """
+    AlbertHeijnError
+        If a request returns a status other than 200 or a body that is
+        not a product list.
+    """  # noqa: DOC502, RUF100
     products: dict[int, dict] = {}
     for chunk in _chunked(list(dict.fromkeys(webshop_ids)), _ID_BATCH):
         products.update(_product_batch(http, chunk))
@@ -390,21 +412,27 @@ def _indexed_products(body: list) -> dict[int, dict]:
 def _graphql(http: httpx.Client, query: str, operation: str) -> dict:
     """POST one no-argument GraphQL query and return its ``data`` payload.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        query: The GraphQL query string.
-        operation: The operation name, used to identify the failing
-            request in error messages.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    query : str
+        The GraphQL query string.
+    operation : str
+        The operation name, used to identify the failing request in
+        error messages.
 
     Returns
     -------
+    dict
         The response's ``data`` payload.
 
     Raises
     ------
-        AlbertHeijnError: If the response is not 200, carries a GraphQL
-            ``errors`` payload, or has an unexpected shape.
+    AlbertHeijnError
+        If the response is not 200, carries a GraphQL ``errors`` payload,
+        or has an unexpected shape.
     """
     response = http.post(GRAPHQL_URL, json={"query": query})
     if response.status_code != 200:
@@ -434,7 +462,7 @@ def _graphql_body(response: httpx.Response, operation: str) -> dict:
 
 
 def _numeric_id(entry: object, key: str) -> int | None:
-    """Return one product entry's ``key`` as an int, or ``None``."""
+    """Return one product entry's named field as an int, or ``None``."""
     if not isinstance(entry, dict):
         return None
     try:
@@ -444,5 +472,5 @@ def _numeric_id(entry: object, key: str) -> int | None:
 
 
 def _chunked(items: Sequence, size: int) -> list[list]:
-    """Yield ``items`` in consecutive chunks of at most ``size``."""
+    """Split a sequence into consecutive chunks of at most a fixed size."""
     return [list(items[start : start + size]) for start in range(0, len(items), size)]

@@ -1,7 +1,8 @@
-"""Authorization-code parsing and token exchange for the Albert Heijn OAuth flow.
+"""Authorization-code parsing and token exchange for Albert Heijn login.
 
-Keeps the vendor-pinned URLs, headers, and request body internal, and turns a
-raw token-endpoint response into a token triple or an ``AuthenticationError``.
+Keeps the vendor-pinned URLs, headers, and request body internal, and
+turns a raw token-endpoint response into a token triple or an
+``AuthenticationError``.
 """
 
 from urllib.parse import parse_qs
@@ -41,13 +42,16 @@ def extract_code(raw: str) -> str | None:
     Accepts a bare code, the full ``appie://login-exit?code=...`` deep-link
     URL, or a bare ``?code=...`` query string.
 
-    Args:
-        raw: The text the user pasted after logging in.
+    Parameters
+    ----------
+    raw : str
+        The text the user pasted after logging in.
 
     Returns
     -------
-        The code, or ``None`` when the input looks like a URL or query string
-        but carries no ``code`` value.
+    str | None
+        The code, or ``None`` when the input looks like a URL or query
+        string but carries no ``code`` value.
     """
     text = raw.strip()
     if not text:
@@ -62,25 +66,30 @@ def extract_code(raw: str) -> str | None:
 def exchange_code(
     code: str, *, client: httpx.Client | None = None
 ) -> tuple[str, str, int]:
-    """Exchange ``code`` for tokens at the Albert Heijn token endpoint.
+    """Exchange an authorization code for tokens at the token endpoint.
 
-    Sends ``POST`` to ``TOKEN_URL`` with a JSON body carrying the client id and
-    the code, the required ``User-Agent`` header, and no ``Authorization``
-    header.
+    Sends ``POST`` to ``TOKEN_URL`` with a JSON body carrying the client
+    id and the code, the required ``User-Agent`` header, and no
+    ``Authorization`` header.
 
-    Args:
-        code: The authorization code from the browser flow.
-        client: An optional ``httpx.Client`` (e.g. backed by a mock transport
-            in tests). A disposable client is created and closed when omitted.
+    Parameters
+    ----------
+    code : str
+        The authorization code from the browser flow.
+    client : httpx.Client | None
+        An optional ``httpx.Client`` (e.g. backed by a mock transport in
+        tests). A disposable client is created and closed when omitted.
 
     Returns
     -------
+    tuple[str, str, int]
         A tuple of ``(access_token, refresh_token, expires_in)``.
 
     Raises
     ------
-        AuthenticationError: If the endpoint returns a non-2xx status or a 2xx
-            body missing a required field.
+    AuthenticationError
+        If the endpoint returns a non-2xx status or a 2xx body missing a
+        required field.
     """
     own_client = client is None
     http = client or httpx.Client()

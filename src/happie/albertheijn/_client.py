@@ -1,9 +1,10 @@
-"""HTTP client for the Albert Heijn product search and purchase-history APIs.
+"""Client for the Albert Heijn product search and purchase-history APIs.
 
 Attaches the required application headers and the user's bearer token to
 every request. The product search endpoint is wrapped directly here; the
 purchase-history endpoints live in the ``_receipts``, ``_orders``, and
-``_history`` submodules, orchestrated by :meth:`AlbertHeijnClient.get_purchase_history`.
+``_history`` submodules, orchestrated by
+:meth:`AlbertHeijnClient.get_purchase_history`.
 """
 
 from collections.abc import Iterable, Iterator, Sequence
@@ -49,30 +50,36 @@ class AlbertHeijnClient:
     """
 
     def get_purchase_history(self, days: int = 90) -> list[PurchaseStat]:
-        """Summarise the user's purchases over the last ``days`` days.
+        """Summarise the user's purchases over a trailing window of days.
 
         Merges in-store receipt items and delivered webshop order items
         into one statistic per product, with a dense per-day purchase
         quantity covering the whole window. Products bought in-store and
-        online under the same webshop id merge into one statistic; receipt
-        items without a webshop conversion stay separate under their
-        point-of-sale id.
+        online under the same webshop id merge into one statistic;
+        receipt items without a webshop conversion stay separate under
+        their point-of-sale id.
 
-        Args:
-            days: The length of the window in days, ending today.
+        Parameters
+        ----------
+        days : int
+            The length of the window in days, ending today. Defaults
+            to 90.
 
         Returns
         -------
+        list[PurchaseStat]
             One :class:`PurchaseStat` per purchased product, sorted by
             total quantity descending.
 
         Raises
         ------
-            AuthenticationError: If no usable stored token exists. No
-                request is made in that case.
-            AlbertHeijnError: If any purchase-history request fails. No
-                partial result is returned.
-        """
+        AuthenticationError
+            If no usable stored token exists. No request is made in
+            that case.
+        AlbertHeijnError
+            If any purchase-history request fails. No partial result
+            is returned.
+        """  # noqa: DOC502, RUF100
         token = get_access_token()
         window_start = datetime.now(UTC).date() - timedelta(days=days - 1)
         http = httpx.Client(
@@ -112,24 +119,30 @@ class AlbertHeijnClient:
             http.close()
 
     def search_products(self, query: str, limit: int = 10) -> list[Product]:
-        """Search the Albert Heijn assortment for ``query``.
+        """Search the Albert Heijn assortment for a query.
 
-        Args:
-            query: The search term.
-            limit: The maximum number of products to return, in the API's
-                relevance order.
+        Parameters
+        ----------
+        query : str
+            The search term.
+        limit : int
+            The maximum number of products to return, in the API's
+            relevance order. Defaults to 10.
 
         Returns
         -------
-            The matching products, at most ``limit`` of them.
+        list[Product]
+            The matching products, at most `limit` of them.
 
         Raises
         ------
-            AuthenticationError: If no usable stored token exists. No
-                request is made in that case.
-            AlbertHeijnError: If the endpoint returns a status other than
-                200, or a 200 with an unexpected body.
-        """
+        AuthenticationError
+            If no usable stored token exists. No request is made in
+            that case.
+        AlbertHeijnError
+            If the endpoint returns a status other than 200, or a 200
+            with an unexpected body.
+        """  # noqa: DOC503, RUF100
         token = get_access_token()
         http = httpx.Client()
         try:
@@ -172,6 +185,7 @@ class AlbertHeijnClient:
 
         Returns
         -------
+        list[Product]
             One :class:`Product` per on-bonus product, each flagged as
             being on bonus with the deal text as its bonus mechanism. An
             empty list when the current bonus period has no products in
@@ -179,12 +193,14 @@ class AlbertHeijnClient:
 
         Raises
         ------
-            AuthenticationError: If no usable stored token exists. No
-                request is made in that case.
-            AlbertHeijnError: If the bonus metadata, any category-section,
-                any bonus-group resolution, or any bonus-product request
-                fails. No partial result is returned.
-        """
+        AuthenticationError
+            If no usable stored token exists. No request is made in
+            that case.
+        AlbertHeijnError
+            If the bonus metadata, any category-section, any bonus-group
+            resolution, or any bonus-product request fails. No partial
+            result is returned.
+        """  # noqa: DOC502, RUF100
         token = get_access_token()
         http = httpx.Client(
             headers={**_APP_HEADERS, "Authorization": f"Bearer {token}"}
@@ -209,23 +225,28 @@ def _fetch_bonus_entries(
 ) -> list[dict | BonusGroup]:
     """Fetch every category's bonus section as one ordered entry list.
 
-    Args:
-        http: The preconfigured client carrying the application headers
-            and the user's bearer token.
-        period_start: The active bonus period's start date, as the
-            metadata endpoint formats it.
-        categories: The national bonus categories, in the metadata's
-            order.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    period_start : str
+        The active bonus period's start date, as the metadata endpoint
+        formats it.
+    categories : Sequence[str]
+        The national bonus categories, in the metadata's order.
 
     Returns
     -------
+    list[dict | BonusGroup]
         The section entries of every category, in category order and,
         within a category, in the section's own order.
 
     Raises
     ------
-        AlbertHeijnError: If any category-section request fails.
-    """
+    AlbertHeijnError
+        If any category-section request fails.
+    """  # noqa: DOC502, RUF100
     sections = [
         fetch_bonus_section(http, period_start, category) for category in categories
     ]
@@ -237,33 +258,41 @@ def _resolve_promotions(
 ) -> dict[str, list[int]]:
     """Resolve the bonus groups' segments, skipping the request when none.
 
-    Args:
-        http: The preconfigured client carrying the application headers
-            and the user's bearer token.
-        entries: The flattened section entries, in order.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    entries : Sequence[dict | BonusGroup]
+        The flattened section entries, in order.
 
     Returns
     -------
+    dict[str, list[int]]
         The segment id to product id mapping, or an empty mapping when
         no section entry is a bonus group.
 
     Raises
     ------
-        AlbertHeijnError: If the bonus-promotions request fails.
-    """
+    AlbertHeijnError
+        If the bonus-promotions request fails.
+    """  # noqa: DOC502, RUF100
     if not any(isinstance(entry, BonusGroup) for entry in entries):
         return {}
     return fetch_bonus_promotions(http)
 
 
 def _first_seen(values: Iterable[int]) -> list[int]:
-    """Return ``values`` deduplicated in first-seen order.
+    """Return the given values deduplicated in first-seen order.
 
-    Args:
-        values: The values, possibly with duplicates.
+    Parameters
+    ----------
+    values : Iterable[int]
+        The values, possibly with duplicates.
 
     Returns
     -------
+    list[int]
         The values with each distinct value kept at its first position.
     """
     seen: set[int] = set()
@@ -280,12 +309,16 @@ def _group_product_ids(
 ) -> list[int]:
     """Collect the product ids the bonus groups expand to.
 
-    Args:
-        entries: The flattened section entries, in order.
-        promotions: The segment id to product id mapping.
+    Parameters
+    ----------
+    entries : Sequence[dict | BonusGroup]
+        The flattened section entries, in order.
+    promotions : dict[str, list[int]]
+        The segment id to product id mapping.
 
     Returns
     -------
+    list[int]
         The resolved product ids in first-seen order: each group
         contributes its segment's ids in the promotions' order, a
         product in more than one group is listed once, and groups whose
@@ -306,13 +339,18 @@ def _expand_bonus_entries(
 ) -> Iterator[dict]:
     """Yield the raw product objects behind the section entries.
 
-    Args:
-        entries: The flattened section entries, in order.
-        promotions: The segment id to product id mapping.
-        raw_by_id: The raw product objects the product lookup returned.
+    Parameters
+    ----------
+    entries : Sequence[dict | BonusGroup]
+        The flattened section entries, in order.
+    promotions : dict[str, list[int]]
+        The segment id to product id mapping.
+    raw_by_id : dict[int, dict]
+        The raw product objects the product lookup returned.
 
     Yields
     ------
+    dict
         Plain entries as-is; each bonus group yields its resolved
         products in the promotions' order, skipping ids the product
         lookup did not return.
@@ -329,18 +367,22 @@ def _expand_bonus_entries(
 def _products_from_raws(raws: Iterable[dict]) -> list[Product]:
     """Build the bonus products from raw product objects.
 
-    Args:
-        raws: The raw product objects in emission order.
+    Parameters
+    ----------
+    raws : Iterable[dict]
+        The raw product objects in emission order.
 
     Returns
     -------
+    list[Product]
         One product per distinct on-bonus webshop id, first occurrence
         first; products the API does not flag as bonus contribute
         nothing.
 
     Raises
     ------
-        AlbertHeijnError: If a raw object has an unexpected shape.
+    AlbertHeijnError
+        If a raw object has an unexpected shape.
     """
     products: list[Product] = []
     emitted: set[int] = set()

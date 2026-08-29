@@ -1,7 +1,8 @@
-"""Pure aggregation of unified purchase records into per-product statistics.
+"""Pure aggregation of purchase records into per-product statistics.
 
 No I/O in this module: it receives already-normalised records from the
-receipt and order sources and turns them into :class:`PurchaseStat` objects.
+receipt and order sources and turns them into
+:class:`PurchaseStat` objects.
 """
 
 from collections.abc import Sequence
@@ -19,12 +20,17 @@ class PurchaseRecord:
 
     Attributes
     ----------
-        day: The calendar day of the purchase.
-        key: The canonical product key (``wi<webshop_id>`` or
-            ``pos<pos_id>``).
-        name: The product name as known by the source.
-        quantity: The quantity purchased.
-        amount: The amount spent on this purchase.
+    day : date
+        The calendar day of the purchase.
+    key : str
+        The canonical product key (``wi<webshop_id>`` or
+        ``pos<pos_id>``).
+    name : str
+        The product name as known by the source.
+    quantity : float
+        The quantity purchased.
+    amount : float
+        The amount spent on this purchase.
     """
 
     day: date
@@ -37,7 +43,7 @@ class PurchaseRecord:
 def aggregate(
     records: Sequence[PurchaseRecord], window_start: date, days: int
 ) -> list[PurchaseStat]:
-    """Aggregate purchase records into one :class:`PurchaseStat` per product.
+    """Aggregate purchase records into a :class:`PurchaseStat` per product.
 
     Records whose day falls outside the window
     (``[window_start, window_start + days - 1]``) are ignored. Records with
@@ -46,13 +52,18 @@ def aggregate(
     histogram entry carrying that day and its summed quantity; days with no
     purchase contribute no entry.
 
-    Args:
-        records: The unified purchase records, from both sources.
-        window_start: The first calendar day of the window.
-        days: The length of the window in days.
+    Parameters
+    ----------
+    records : Sequence[PurchaseRecord]
+        The unified purchase records, from both sources.
+    window_start : date
+        The first calendar day of the window.
+    days : int
+        The length of the window in days.
 
     Returns
     -------
+    list[PurchaseStat]
         One statistic per product, sorted by total quantity descending
         (ties broken by product key for a deterministic order).
     """

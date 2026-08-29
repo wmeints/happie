@@ -56,11 +56,16 @@ class ReceiptItem:
 
     Attributes
     ----------
-        date: The calendar day of the receipt (the UTC date of its time).
-        pos_id: The store point-of-sale product id.
-        quantity: The quantity on the receipt.
-        name: The POS short name of the product.
-        amount: The amount charged for the line.
+    date : date
+        The calendar day of the receipt (the UTC date of its time).
+    pos_id : int
+        The store point-of-sale product id.
+    quantity : float
+        The quantity on the receipt.
+    name : str
+        The POS short name of the product.
+    amount : float
+        The amount charged for the line.
     """
 
     date: date
@@ -75,13 +80,17 @@ def fetch_receipt_history(
 ) -> tuple[list[ReceiptItem], dict[int, int]]:
     """Fetch in-window receipt items and their POS-to-webshop id mapping.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        window_start: The first calendar day to include.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    window_start : date
+        The first calendar day to include.
 
     Returns
     -------
+    tuple[list[ReceiptItem], dict[int, int]]
         A pair of:
 
         - the in-window receipt line items, oldest receipt first;
@@ -90,9 +99,10 @@ def fetch_receipt_history(
 
     Raises
     ------
-        AlbertHeijnError: If any request returns a status other than 200,
-            a GraphQL ``errors`` payload, or an unexpected body.
-    """
+    AlbertHeijnError
+        If any request returns a status other than 200, a GraphQL
+        ``errors`` payload, or an unexpected body.
+    """  # noqa: DOC502, RUF100
     receipts = _window_receipts(http, window_start)
     items = _receipt_items(http, receipts)
     return items, _id_conversion(http, items)
@@ -101,20 +111,25 @@ def fetch_receipt_history(
 def _window_receipts(http: httpx.Client, window_start: date) -> list[tuple[str, date]]:
     """Page the receipt list until a page reaches before the window.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        window_start: The first calendar day to include.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    window_start : date
+        The first calendar day to include.
 
     Returns
     -------
+    list[tuple[str, date]]
         The in-window ``(receipt id, day)`` pairs, newest receipt first.
 
     Raises
     ------
-        AlbertHeijnError: If any page request fails or carries an
-            unparsable receipt entry.
-    """
+    AlbertHeijnError
+        If any page request fails or carries an unparsable receipt
+        entry.
+    """  # noqa: DOC502, RUF100
     receipts: list[tuple[str, date]] = []
     offset = 0
     while True:
@@ -145,14 +160,19 @@ def _in_window_entries(
 ) -> tuple[list[tuple[str, date]], bool]:
     """Split one page into its in-window prefix and a window-boundary flag.
 
-    Args:
-        entries: The page entries, newest receipt first.
-        window_start: The first calendar day to include.
+    Parameters
+    ----------
+    entries : Sequence[dict]
+        The page entries, newest receipt first.
+    window_start : date
+        The first calendar day to include.
 
     Returns
     -------
-        A pair of the in-window ``(receipt id, day)`` pairs and whether the
-        page reached an entry older than the window (which ends the paging).
+    tuple[list[tuple[str, date]], bool]
+        A pair of the in-window ``(receipt id, day)`` pairs and whether
+        the page reached an entry older than the window (which ends the
+        paging).
     """
     batch: list[tuple[str, date]] = []
     for entry in entries:
@@ -217,22 +237,27 @@ def enrich_product_names(
 ) -> dict[int, str]:
     """Fetch current webshop titles for the given product ids.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        webshop_ids: The webshop product ids to look up, in any order and
-            with duplicates.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    webshop_ids : Sequence[int]
+        The webshop product ids to look up, in any order and with
+        duplicates.
 
     Returns
     -------
-        The webshop id to title mapping for the ids the endpoint returned;
-        ids the endpoint omits have no entry.
+    dict[int, str]
+        The webshop id to title mapping for the ids the endpoint
+        returned; ids the endpoint omits have no entry.
 
     Raises
     ------
-        AlbertHeijnError: If a request returns a status other than 200 or
-            a body that is not a product list.
-    """
+    AlbertHeijnError
+        If a request returns a status other than 200 or a body that is
+        not a product list.
+    """  # noqa: DOC502, RUF100
     names: dict[int, str] = {}
     for chunk in _chunked(list(dict.fromkeys(webshop_ids)), _ID_BATCH):
         names.update(_batch_titles(http, chunk))
@@ -285,22 +310,29 @@ def _graphql(
 ) -> dict:
     """POST one GraphQL query and return its ``data`` payload.
 
-    Args:
-        http: The preconfigured client carrying the application headers and
-            the user's bearer token.
-        query: The GraphQL query string.
-        operation: The operation name, used to identify the failing
-            request in error messages.
-        variables: The GraphQL variables, if the query takes any.
+    Parameters
+    ----------
+    http : httpx.Client
+        The preconfigured client carrying the application headers and
+        the user's bearer token.
+    query : str
+        The GraphQL query string.
+    operation : str
+        The operation name, used to identify the failing request in
+        error messages.
+    variables : dict | None
+        The GraphQL variables, if the query takes any.
 
     Returns
     -------
+    dict
         The response's ``data`` payload.
 
     Raises
     ------
-        AlbertHeijnError: If the response is not 200, carries a GraphQL
-            ``errors`` payload, or has an unexpected shape.
+    AlbertHeijnError
+        If the response is not 200, carries a GraphQL ``errors``
+        payload, or has an unexpected shape.
     """
     payload: dict[str, object] = {"query": query}
     if variables is not None:
@@ -383,6 +415,6 @@ def _receipt_item(day: date, product: dict) -> ReceiptItem:
 
 
 def _chunked(items: Sequence, size: int) -> Iterable[list]:
-    """Yield ``items`` in consecutive chunks of at most ``size``."""
+    """Split a sequence into consecutive chunks of at most a fixed size."""
     for start in range(0, len(items), size):
         yield list(items[start : start + size])

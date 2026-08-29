@@ -26,7 +26,7 @@ _FILE_MODE = 0o644
 
 
 def _desktop_entry_content(cli_path: str) -> str:
-    """Render the desktop entry content for ``cli_path``.
+    """Render the desktop entry content for the CLI path.
 
     ``%u`` is quoted so URLs containing spaces or ``&`` survive the desktop
     environment's ``Exec`` parsing; the CLI is referenced by absolute path
@@ -43,7 +43,7 @@ def _desktop_entry_content(cli_path: str) -> str:
 
 
 def _mark_trusted(path: Path) -> None:
-    """Mark ``path`` trusted via ``gio``; best effort, failures are ignored.
+    """Mark the desktop entry trusted via ``gio``; failures are ignored.
 
     GNOME treats desktop entries as untrusted until the mark is set; Plasma
     does not require it, and ``gio`` is absent on minimal systems where it
@@ -63,21 +63,23 @@ def _mark_trusted(path: Path) -> None:
 def ensure_handler(path: Path = DESKTOP_ENTRY_PATH) -> None:
     """Install or refresh the ``appie://`` scheme-handler desktop entry.
 
-    Resolves the current ``happie`` CLI via ``shutil.which`` and writes the
-    desktop entry with an absolute ``Exec`` line. The file is left untouched
-    when it already matches; a stale ``Exec`` path (reinstall or update)
-    triggers a rewrite, which is the self-heal. On a first write the entry
-    is marked trusted via ``gio set`` so GNOME accepts it; the call is best
-    effort and its failure is ignored.
+    Resolves the current ``happie`` CLI via ``shutil.which`` and writes
+    the desktop entry with an absolute ``Exec`` line. The file is left
+    untouched when it already matches; a stale ``Exec`` path (reinstall
+    or update) triggers a rewrite, which is the self-heal. On a first
+    write the entry is marked trusted via ``gio set`` so GNOME accepts
+    it; the call is best effort and its failure is ignored.
 
-    Args:
-        path: Where to write the desktop entry; defaults to
-            ``~/.local/share/applications/happie.desktop``.
+    Parameters
+    ----------
+    path : Path
+        Where to write the desktop entry; defaults to
+        ``~/.local/share/applications/happie.desktop``.
 
     Raises
     ------
-        AuthenticationError: If the ``happie`` CLI cannot be located on the
-            ``PATH``.
+    AuthenticationError
+        If the ``happie`` CLI cannot be located on the ``PATH``.
     """
     cli_path = shutil.which("happie")
     if cli_path is None:

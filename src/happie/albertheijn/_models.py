@@ -16,20 +16,30 @@ class Product:
 
     Attributes
     ----------
-        webshop_id: The webshop identifier used to order the product.
-        title: The product name.
-        brand: The brand name.
-        price: The current price.
-        price_before_bonus: The price before any bonus promotion; equals
-            ``price`` for products that are not on bonus.
-        is_bonus: Whether the product is currently on bonus.
-        bonus_mechanism: The bonus mechanism text (for example
-            "2e halve prijs"); empty when not on bonus.
-        sales_unit_size: The package size (for example "250 g").
-        unit_price_description: The unit price description (for example
-            "per 100 g").
-        available_online: Whether the product is available for online order.
-        main_category: The main category of the product.
+    webshop_id : int
+        The webshop identifier used to order the product.
+    title : str
+        The product name.
+    brand : str
+        The brand name.
+    price : float
+        The current price.
+    price_before_bonus : float
+        The price before any bonus promotion; equals `price` for
+        products that are not on bonus.
+    is_bonus : bool
+        Whether the product is currently on bonus.
+    bonus_mechanism : str
+        The bonus mechanism text (for example "2e halve prijs"); empty
+        when not on bonus.
+    sales_unit_size : str
+        The package size (for example "250 g").
+    unit_price_description : str
+        The unit price description (for example "per 100 g").
+    available_online : bool
+        Whether the product is available for online order.
+    main_category : str
+        The main category of the product.
     """
 
     webshop_id: int
@@ -48,22 +58,27 @@ class Product:
 def product_from_api(data: dict) -> Product:
     """Translate a raw API product object into a :class:`Product`.
 
-    A non-bonus product always reports ``price == price_before_bonus``; a
+    A non-bonus product always reports `price == price_before_bonus`; a
     missing ``currentPrice`` falls back to the pre-bonus price. Fields the
     tool does not surface (images, nutriscore, ad flags) are dropped.
 
-    Args:
-        data: One entry of the API's ``products`` array.
+    Parameters
+    ----------
+    data : dict
+        One entry of the API's ``products`` array.
 
     Returns
     -------
+    Product
         The translated :class:`Product`.
 
     Raises
     ------
-        KeyError: If the ``webshopId`` field is missing.
-        TypeError: If a field has an unexpected type.
-    """
+    KeyError
+        If the ``webshopId`` field is missing.
+    TypeError
+        If a field has an unexpected type.
+    """  # noqa: DOC502, RUF100
     price = float(data.get("currentPrice") or 0.0)
     price_before_bonus = float(data.get("priceBeforeBonus") or 0.0)
     is_bonus = bool(data.get("isBonus", False))
@@ -92,17 +107,22 @@ class PurchaseStat:
 
     Attributes
     ----------
-        key: The canonical product key: ``wi<webshop_id>`` for products
-            resolved to a webshop id, ``pos<pos_id>`` for receipt items
-            whose store point-of-sale id has no webshop conversion.
-        name: The product name.
-        total_quantity: The total quantity purchased in the window.
-        total_spend: The total amount spent on the product in the window.
-        histogram: The sparse per-day purchase quantities: one
-            ``(date, quantity)`` entry per calendar day on which the
-            product was purchased, the quantity summed across that day's
-            records, ordered by date ascending. Empty when the product was
-            not purchased in the window.
+    key : str
+        The canonical product key: ``wi<webshop_id>`` for products
+        resolved to a webshop id, ``pos<pos_id>`` for receipt items
+        whose store point-of-sale id has no webshop conversion.
+    name : str
+        The product name.
+    total_quantity : float
+        The total quantity purchased in the window.
+    total_spend : float
+        The total amount spent on the product in the window.
+    histogram : tuple[tuple[date, float], ...]
+        The sparse per-day purchase quantities: one ``(date,
+        quantity)`` entry per calendar day on which the product was
+        purchased, the quantity summed across that day's records,
+        ordered by date ascending. Empty when the product was not
+        purchased in the window.
     """
 
     key: str

@@ -2,12 +2,12 @@
 
 ``login()`` installs the ``appie://`` protocol handler, opens the
 authorization page, and waits for the token file to hold a fresh token.
-``complete()`` accepts the authorization code (argument or terminal prompt),
-exchanges it for tokens, and stores them. ``get_access_token()`` returns a
-usable access token, refreshing the stored pair on expiry. Code parsing and
-the token exchange live in a private submodule; the token store and the
-handler installation are separate private modules, so each seam is
-unit-testable without a browser or network.
+``complete()`` accepts the authorization code (argument or terminal
+prompt), exchanges it for tokens, and stores them. ``get_access_token()``
+returns a usable access token, refreshing the stored pair on expiry. Code
+parsing and the token exchange live in a private submodule; the token
+store and the handler installation are separate private modules, so each
+seam is unit-testable without a browser or network.
 """
 
 import time
@@ -60,16 +60,16 @@ def login() -> None:
     """Run the browser OAuth login flow.
 
     Installs the ``appie://`` protocol handler, snapshots the token file,
-    opens the authorization URL in the user's default browser, and waits for
-    the code-completion entrypoint to store a fresh token (invoked by the
-    desktop environment when the browser redirects to ``appie://login-exit``).
-    The flow never prompts for the code.
+    opens the authorization URL in the user's default browser, and waits
+    for the code-completion entrypoint to store a fresh token (invoked
+    by the desktop environment when the browser redirects to
+    ``appie://login-exit``). The flow never prompts for the code.
 
     Raises
     ------
-        AuthenticationError: If the handler cannot be installed, the browser
-            cannot be opened, or no fresh token is stored within five
-            minutes.
+    AuthenticationError
+        If the handler cannot be installed, the browser cannot be
+        opened, or no fresh token is stored within five minutes.
     """
     ensure_handler()
     initial_state = _token_file_state(DEFAULT_TOKEN_PATH)
@@ -83,22 +83,25 @@ def complete(raw: str | None = None) -> Token:
 
     When ``raw`` is given (bare code, full ``appie://`` deep-link URL, or
     query string) it is used directly; when it is omitted the user is
-    prompted until the input yields a code. The exchanged token is stored at
-    ``~/.config/happie/token``.
+    prompted until the input yields a code. The exchanged token is
+    stored at ``~/.config/happie/token``.
 
-    Args:
-        raw: The deep-link URL, query string, or bare code; ``None`` to
-            prompt on the terminal.
+    Parameters
+    ----------
+    raw : str | None
+        The deep-link URL, query string, or bare code; ``None`` prompts
+        on the terminal.
 
     Returns
     -------
+    Token
         The stored :class:`Token`.
 
     Raises
     ------
-        AuthenticationError: If no code can be extracted from ``raw`` or the
-            exchange fails. The message never contains the code or any token
-            value.
+    AuthenticationError
+        If no code can be extracted from ``raw`` or the exchange fails.
+        The message never contains the code or any token value.
     """
     if raw is None:
         code = _prompt_for_code()
@@ -121,10 +124,10 @@ def complete(raw: str | None = None) -> Token:
 
 
 def _prompt_for_code() -> str:
-    """Prompt until the user supplies input that yields an authorization code.
+    """Prompt until the input yields an authorization code.
 
-    The raw input is never logged; a code-less URL or query string is reported
-    and the user is prompted again.
+    The raw input is never logged; a code-less URL or query string is
+    reported and the user is prompted again.
     """
     while True:
         raw = typer.prompt(_PROMPT_TEXT)
@@ -135,7 +138,7 @@ def _prompt_for_code() -> str:
 
 
 def _token_file_state(path: Path) -> tuple[int, int] | None:
-    """Return the token file's ``(st_ino, st_mtime_ns)``, or ``None`` if absent."""
+    """Return the token file's ``(st_ino, st_mtime_ns)``, or ``None``."""
     try:
         stat_result = path.stat()
     except FileNotFoundError:
@@ -144,7 +147,7 @@ def _token_file_state(path: Path) -> tuple[int, int] | None:
 
 
 def _token_file_is_fresh(path: Path) -> bool:
-    """Return True when the token file holds a parseable, not-yet-expired token."""
+    """Return True when the file holds a parseable unexpired token."""
     token = load_token(path)
     if token is None:
         return False
@@ -154,19 +157,23 @@ def _token_file_is_fresh(path: Path) -> bool:
 def _wait_for_token(initial_state: tuple[int, int] | None) -> None:
     """Block until the token file changes to hold a fresh stored token.
 
-    Polls ``DEFAULT_TOKEN_PATH`` every 10 ms; a change counts as success only
-    when the new content parses as stored-token JSON whose ``expires_at`` is
-    in the future. Any other update (stale expiry, malformed JSON) keeps the
-    wait going. A token written later by other tooling (e.g. a future token
-    refresh) also ends the wait with a usable token — accepted trade-off.
+    Polls ``DEFAULT_TOKEN_PATH`` every 10 ms; a change counts as success
+    only when the new content parses as stored-token JSON whose
+    ``expires_at`` is in the future. Any other update (stale expiry,
+    malformed JSON) keeps the wait going. A token written later by other
+    tooling (e.g. a future token refresh) also ends the wait with a
+    usable token — accepted trade-off.
 
-    Args:
-        initial_state: The ``(st_ino, st_mtime_ns)`` snapshot taken before
-            the browser was opened, or ``None`` when the file was absent.
+    Parameters
+    ----------
+    initial_state : tuple[int, int] | None
+        The ``(st_ino, st_mtime_ns)`` snapshot taken before the browser
+        was opened, or ``None`` when the file was absent.
 
     Raises
     ------
-        AuthenticationError: If no valid change occurs within the timeout.
+    AuthenticationError
+        If no valid change occurs within the timeout.
     """
     deadline = time.monotonic() + _WATCH_TIMEOUT.total_seconds()
     while time.monotonic() < deadline:

@@ -4,6 +4,7 @@ import asyncio
 import json
 from dataclasses import asdict
 from datetime import date
+from typing import Any
 
 import pytest
 from fastmcp.exceptions import ToolError
@@ -11,6 +12,12 @@ from fastmcp.exceptions import ToolError
 from happie.albertheijn import Product, PurchaseStat
 from happie.auth import AuthenticationError
 from happie.server import mcp
+
+
+def _structured_content(result) -> dict[str, Any]:
+    """The tool call's structured payload, asserted present."""
+    assert result.structured_content is not None
+    return result.structured_content
 
 
 class StubClient:
@@ -88,7 +95,7 @@ def test_search_products_passes_arguments_to_client(monkeypatch) -> None:
 
     assert stub.calls == [("melk", 3)]
     assert result.is_error is False
-    assert result.structured_content["result"] == [asdict(_product())]
+    assert _structured_content(result)["result"] == [asdict(_product())]
 
 
 def test_search_products_defaults_limit_to_ten(monkeypatch) -> None:
@@ -109,7 +116,7 @@ def test_search_products_returns_empty_list_when_no_matches(monkeypatch) -> None
     result = asyncio.run(mcp.call_tool("search_products", {"query": "zzzznotthere"}))
 
     assert result.is_error is False
-    assert result.structured_content["result"] == []
+    assert _structured_content(result)["result"] == []
 
 
 def test_search_products_propagates_client_errors(monkeypatch) -> None:
@@ -155,7 +162,7 @@ def test_purchase_frequency_passes_arguments_and_returns_stats(monkeypatch) -> N
 
     assert stub.history_calls == [30]
     assert result.is_error is False
-    assert result.structured_content["result"] == [
+    assert _structured_content(result)["result"] == [
         _json_round_trip(asdict(stat)) for stat in stats[:2]
     ]
 
@@ -178,7 +185,7 @@ def test_purchase_frequency_returns_empty_list_when_no_purchases(monkeypatch) ->
     result = asyncio.run(mcp.call_tool("purchase_frequency", {}))
 
     assert result.is_error is False
-    assert result.structured_content["result"] == []
+    assert _structured_content(result)["result"] == []
 
 
 def test_purchase_frequency_propagates_client_errors(monkeypatch) -> None:
@@ -222,7 +229,7 @@ def test_bonus_offers_returns_the_clients_products(monkeypatch) -> None:
 
     assert stub.bonus_calls == 1
     assert result.is_error is False
-    assert result.structured_content["result"] == [asdict(p) for p in products]
+    assert _structured_content(result)["result"] == [asdict(p) for p in products]
 
 
 def test_bonus_offers_trims_to_the_limit(monkeypatch) -> None:
@@ -238,7 +245,7 @@ def test_bonus_offers_trims_to_the_limit(monkeypatch) -> None:
     result = asyncio.run(mcp.call_tool("bonus_offers", {"limit": 2}))
 
     assert result.is_error is False
-    assert result.structured_content["result"] == [asdict(p) for p in products[:2]]
+    assert _structured_content(result)["result"] == [asdict(p) for p in products[:2]]
 
 
 def test_bonus_offers_returns_empty_list_when_no_offers(monkeypatch) -> None:
@@ -249,7 +256,7 @@ def test_bonus_offers_returns_empty_list_when_no_offers(monkeypatch) -> None:
     result = asyncio.run(mcp.call_tool("bonus_offers", {}))
 
     assert result.is_error is False
-    assert result.structured_content["result"] == []
+    assert _structured_content(result)["result"] == []
 
 
 def test_bonus_offers_propagates_client_errors(monkeypatch) -> None:
@@ -277,4 +284,4 @@ def test_bonus_offers_failure_keeps_the_server_running(monkeypatch) -> None:
     result = asyncio.run(mcp.call_tool("bonus_offers", {}))
 
     assert result.is_error is False
-    assert result.structured_content["result"] == [asdict(_bonus_product())]
+    assert _structured_content(result)["result"] == [asdict(_bonus_product())]
